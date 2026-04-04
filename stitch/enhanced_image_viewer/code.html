@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AllVie - Image Viewer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1313ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101022",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(16, 16, 34, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .image-container {
+            height: calc(100vh - 80px);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased overflow-hidden">
+<div class="relative flex h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-hidden">
+<!-- Top Overlay Controls -->
+<div class="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-6 bg-gradient-to-b from-black/60 to-transparent">
+<button class="flex size-12 shrink-0 items-center justify-center rounded-full glass-panel text-slate-100 hover:bg-primary/40 transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="flex gap-4">
+<button class="flex size-12 shrink-0 items-center justify-center rounded-full glass-panel text-slate-100 hover:bg-primary/40 transition-colors">
+<span class="material-symbols-outlined">favorite</span>
+</button>
+<button class="flex size-12 shrink-0 items-center justify-center rounded-full glass-panel text-slate-100 hover:bg-primary/40 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Main Immersive Image Area -->
+<div class="relative flex-1 flex items-center justify-center w-full h-full bg-black">
+<div class="w-full h-full bg-center bg-contain bg-no-repeat" data-alt="Cinematic landscape mountain view at sunset" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCnRRB76dDWovPGQPPJkZ69pGccktPzSIQRoHi1uwP8w4yhC0zQu-ZEXX8-MMtcUR9YFawRWosKksWENhdXOeei0lToLbHG3aX_OpCAuhmEBeKarr3_bnlxAc7oK_VhzspHSk0HV_lQ1i4g_G6Fi6nUgRPjK_hIva1icNDMnN2oRVyO9jMdPjfRGU3MVYda8br8m7Ro9X8LyOycgRj9QSeGhZngtvVF4jFzV9JyAyeqxEyo7RsWKTxJSF6c8yJColQdhrtdXMxZtFs");'>
+</div>
+</div>
+<!-- Bottom Action Bar -->
+<div class="absolute bottom-8 left-0 right-0 z-50 px-6">
+<div class="max-w-md mx-auto glass-panel rounded-2xl p-2 flex items-center justify-center gap-4 shadow-2xl">
+<button class="flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-xl hover:bg-white/10 text-slate-100 group transition-all">
+<span class="material-symbols-outlined text-[24px]">share</span>
+<span class="text-[10px] font-medium uppercase tracking-wider opacity-60 group-hover:opacity-100">Share</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-xl hover:bg-white/10 text-slate-100 group transition-all">
+<span class="material-symbols-outlined text-[24px]">info</span>
+<span class="text-[10px] font-medium uppercase tracking-wider opacity-60 group-hover:opacity-100">Details</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 w-20 h-16 rounded-xl hover:bg-red-500/20 text-red-400 group transition-all">
+<span class="material-symbols-outlined text-[24px]">delete</span>
+<span class="text-[10px] font-medium uppercase tracking-wider opacity-60 group-hover:opacity-100">Delete</span>
+</button>
+</div>
+</div>
+<!-- Image Info Badge (Floating) -->
+<div class="absolute bottom-32 left-1/2 -translate-x-1/2 text-center pointer-events-none">
+<h2 class="text-white font-semibold text-lg drop-shadow-md">Alps Peak Panorama</h2>
+<p class="text-white/70 text-sm drop-shadow-md">Shot on AllVie Pro • 24mm • f/1.8</p>
+</div>
+<!-- Navigation Side Buttons (Subtle) -->
+<button class="absolute left-4 top-1/2 -translate-y-1/2 size-14 rounded-full flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-all">
+<span class="material-symbols-outlined text-4xl">chevron_left</span>
+</button>
+<button class="absolute right-4 top-1/2 -translate-y-1/2 size-14 rounded-full flex items-center justify-center text-white/30 hover:text-white hover:bg-white/10 transition-all">
+<span class="material-symbols-outlined text-4xl">chevron_right</span>
+</button>
+</div>
+</body></html>

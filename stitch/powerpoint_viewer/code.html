@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AllVie - PowerPoint Viewer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1313ec",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101022",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-primary {
+            background: rgba(19, 19, 236, 0.2);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(19, 19, 236, 0.3);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="sticky top-0 z-50 glass border-b border-slate-200/10 px-4 h-16 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<button class="flex items-center justify-center size-10 rounded-full hover:bg-slate-500/10 transition-colors">
+<span class="material-symbols-outlined text-slate-100">arrow_back</span>
+</button>
+<div>
+<h1 class="text-sm font-semibold text-slate-100 leading-none">Marketing_Strategy.pptx</h1>
+<p class="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Presentation Mode</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex items-center justify-center size-10 rounded-full hover:bg-slate-500/10 text-slate-100">
+<span class="material-symbols-outlined">share</span>
+</button>
+<button class="flex items-center justify-center size-10 rounded-full bg-primary text-white shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center gap-8">
+<!-- Active Slide Card -->
+<div class="w-full max-w-4xl glass rounded-xl overflow-hidden shadow-2xl relative">
+<div class="aspect-video relative bg-slate-900 overflow-hidden">
+<!-- Slide Background Image -->
+<div class="absolute inset-0 opacity-40 grayscale" data-alt="Abstract marketing data analytics and charts" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD4l3xlYz91VA1gHpmEWR4FQoPQjGK_QGTUkRSMwgFGwyj7Ly7o1JUkb5nTd1JbC5k2jrYna-BrT3iCC9jkvScYHSztUjn2od1xpIqLI8s8wKwKdoV7F0FqBAsH40M8gZ6FUEZpV7OALcfQmyfqTtHLQvrAcCuThxezy0bMgC527zpqwRhyNrZuBD4DWcjUBfU3-Wx3HPbTZFj7IpkfXp8C_2qLKeJTSe22AblakIYLfZs7bMkXu4udtRzDFM9Mn1kJ5fNztCvf52Q'); background-size: cover; background-position: center;"></div>
+<!-- Slide Content Overlays -->
+<div class="absolute inset-0 p-8 md:p-12 flex flex-col justify-center">
+<div class="max-w-xl">
+<span class="inline-block px-3 py-1 rounded-full glass-primary text-xs font-bold text-primary mb-4">SLIDE 04</span>
+<h2 class="text-3xl md:text-4xl font-bold text-white mb-6">Market Expansion Strategy</h2>
+<div class="space-y-4">
+<div class="flex items-start gap-3">
+<div class="mt-1.5 size-2 rounded-full bg-primary"></div>
+<p class="text-slate-200 text-lg leading-relaxed">Identifying high-growth regional hubs for Q3 deployment.</p>
+</div>
+<div class="flex items-start gap-3">
+<div class="mt-1.5 size-2 rounded-full bg-primary"></div>
+<p class="text-slate-200 text-lg leading-relaxed">Omni-channel marketing integration across social platforms.</p>
+</div>
+<div class="flex items-start gap-3">
+<div class="mt-1.5 size-2 rounded-full bg-primary"></div>
+<p class="text-slate-200 text-lg leading-relaxed">Targeting Gen-Z demographic with personalized AI-driven content.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Slide Controls Floating Overlay -->
+<div class="absolute bottom-6 right-6 flex gap-2">
+<button class="glass size-12 rounded-full flex items-center justify-center hover:bg-white/10">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="glass size-12 rounded-full flex items-center justify-center hover:bg-white/10">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Slide Progress Info -->
+<div class="flex items-center gap-4 text-slate-400">
+<span class="text-sm font-medium">Slide 4 of 12</span>
+<div class="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+<div class="h-full bg-primary w-1/3 rounded-full"></div>
+</div>
+</div>
+<!-- Quick Actions / Bullet Points Component -->
+<section class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-3 gap-4 pb-24">
+<div class="glass p-5 rounded-xl border-l-4 border-primary">
+<div class="flex items-center gap-3 mb-3">
+<span class="material-symbols-outlined text-primary">analytics</span>
+<h3 class="font-semibold text-slate-100">Key Metrics</h3>
+</div>
+<p class="text-sm text-slate-400">Track real-time conversion rates across all active regional campaigns.</p>
+</div>
+<div class="glass p-5 rounded-xl">
+<div class="flex items-center gap-3 mb-3">
+<span class="material-symbols-outlined text-slate-400">groups</span>
+<h3 class="font-semibold text-slate-100">Team Notes</h3>
+</div>
+<p class="text-sm text-slate-400">Sarah to finalize the budget allocation for influencer partnerships.</p>
+</div>
+<div class="glass p-5 rounded-xl">
+<div class="flex items-center gap-3 mb-3">
+<span class="material-symbols-outlined text-slate-400">event</span>
+<h3 class="font-semibold text-slate-100">Next Steps</h3>
+</div>
+<p class="text-sm text-slate-400">Quarterly review scheduled for Friday at 10:00 AM PST.</p>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation & Filmstrip -->
+<footer class="fixed bottom-0 left-0 right-0 z-50">
+<!-- Filmstrip Preview -->
+<div class="glass border-t border-slate-200/10 px-4 py-3 flex gap-4 overflow-x-auto no-scrollbar scroll-smooth">
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800" data-alt="Slide 1 preview pattern" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB0Ic0QGXHYwV2GTmGqBeHRuCkVbF1QHQrhFtYkTWdGXtYk0nMu2j791TkxBettpTaZdDtDP3zAtVtztwOdBmXof8hfIjgxxajRTZYSsLENQ1iLIgmSs69ZyOCD2LmLuSH4mdAFVbQ-HZ7rgsuSvvvd8OJjVoqk1NHickM7i9FtvUrcvPwU5MM5Dc69n7Mn7tgS8aTtM23o5NnIeS3nGtmgUG_UeB2q76yCWGCbSnw28HNCXCGMQkvDTpxcCYXTjJ-C7fDfkiSaMMQ'); background-size: cover;"></div>
+</div>
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800" data-alt="Slide 2 preview charts" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBlaEm-7RCYw8rc0jl7vcIcZNLz1FsEakLv5GU6IcpwEGqeJcZ0I4NoznN0pnkZf_yvj9NrgXoLDygQ0cIx7OSvdHT3IJ-RnEXxJ_QXYoYxRNfteqAw0w8HiZ70VCWwJq-E0cguqPkRPB9f-qnI5JPAW0sOndme9_qO5menx5tKFs5d5DfsRFB0WXfX8BCM6QykIY_Zc8gpi8q5OW5M-ugAYk7I0rOuyvtlqCmK6L8wKe2ETAi9xz8_gfhCB0_DkEqxTBKycyrYKNQ'); background-size: cover;"></div>
+</div>
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800" data-alt="Slide 3 preview network" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCbt-61nfmfbrT8T8ECCg1EmkMtMLyNw_znMXOauQARTyJaECdabiH-Bpe5OyhEde_gGLpbb4XzSfCWznvBJiWvu1hZeDA8DBnPEE11AVB1iqszbIAopnMqoPRD0c0fJUFBPbr_ROPFfLjOQkRXQUDtXc6eBrdNBg7XcfmaBP-HwsXVaL6QZNKXP5yvQ-TvBhQmtv3ruSUAhjvpYxW5FNAM-uaJ-KUT1a4ZbP2OfLTXUeh0_kXtA6wOntxxXnarLwFClPDAP7QApds'); background-size: cover;"></div>
+</div>
+<!-- Active Preview -->
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-primary shadow-lg shadow-primary/20 scale-105">
+<div class="w-full h-full bg-slate-800" data-alt="Slide 4 preview currently active" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCY4d1LgQ6EW9f_EmMiQ9VLsLQm3fp_WHR8mM5uedc27l35PGtpdbVt6DgA5vzTx2eSrDV10XvgLCLA7k7QH1UaAvQsAV2SCD3Qj-1XDrsaqLG8d3Tj-grsiAas2-Mzk1fsW5-wsXOvt-7ySOfUffP1SU-ZE6T9QqVJGXnDzyZXt8ET1EAndCjqpmP4Pxo9GepDvL8Bejq1qBJbpzPNUS6xpm4DP_2GYsvTbf_ReUOAySOXbXvbZXQGzc7Xghm1BVQtvWPdimfPR7w'); background-size: cover;"></div>
+</div>
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800"></div>
+</div>
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800"></div>
+</div>
+<div class="flex-none w-24 aspect-video rounded-md overflow-hidden border-2 border-slate-700/50 grayscale opacity-60">
+<div class="w-full h-full bg-slate-800"></div>
+</div>
+</div>
+<!-- System Bottom Nav -->
+<div class="flex gap-2 border-t border-slate-200/10 bg-background-dark/80 backdrop-blur-md px-4 pb-4 pt-3">
+<a class="flex flex-1 flex-col items-center justify-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined text-2xl">description</span>
+<span class="text-[10px] font-medium">Slides</span>
+</a>
+<a class="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400" href="#">
+<span class="material-symbols-outlined text-2xl">search</span>
+<span class="text-[10px] font-medium">Search</span>
+</a>
+<div class="flex-1 flex justify-center">
+<button class="bg-primary size-12 -mt-6 rounded-full flex items-center justify-center shadow-xl shadow-primary/40 text-white">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+<a class="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400" href="#">
+<span class="material-symbols-outlined text-2xl">comment</span>
+<span class="text-[10px] font-medium">Notes</span>
+</a>
+<a class="flex flex-1 flex-col items-center justify-center gap-1 text-slate-400" href="#">
+<span class="material-symbols-outlined text-2xl">settings</span>
+<span class="text-[10px] font-medium">Setup</span>
+</a>
+</div>
+</footer>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>
