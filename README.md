@@ -58,3 +58,43 @@ cd AllVie-file-viewer-Android-
 ```
 
 ### Project Structure
+```
+📦 AllVie
+ ┣ 📂 app/          → Main application module
+ ┣ 📂 gradle/       → Build configuration
+ ┣ 📂 stitch/       → (Custom module - see source)
+ ┣ 📜 build.gradle.kts
+ ┣ 📜 settings.gradle.kts
+ ┗ 📜 README.md
+```
+
+---
+
+## 🗺️ Roadmap
+- [ ] Stabilize PPTX rendering pipeline (bitmap caching + memory optimization)
+- [ ] Add native DOC/DOCX & XLS/XLSX preview (via PDF conversion or lightweight renderer)
+- [ ] Search within documents
+- [ ] File management actions (rename, delete, share)
+- [ ] Widget & quick-access shortcuts
+
+> ⚠️ **Note**: PPT/PPTX preview is experimental in v0.2. Complex slides may render imperfectly. Office formats (DOC/XLS) currently use external app handoff.
+
+---
+
+## 🤝 Contributing
+1. Fork the repo
+2. Create a feature branch: `git checkout -b feat/your-change`
+3. Commit: `git commit -m 'feat: describe change'`
+4. Push & open a PR
+
+Please follow Kotlin coding conventions and test on Android 10+ devices.
+
+---
+
+## 📜 License
+MIT License — See [LICENSE](LICENSE) for details.
+
+---
+
+> Built by [Tanmoy Kabasi](https://github.com/Tanmoykabasi) using Kotlin & Jetpack Compose.
+```
