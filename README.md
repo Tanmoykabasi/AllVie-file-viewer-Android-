@@ -74,7 +74,6 @@ cd AllVie-file-viewer-Android-
 - [ ] Stabilize PPTX rendering pipeline (bitmap caching + memory optimization)
 - [ ] Add native DOC/DOCX & XLS/XLSX preview (via PDF conversion or lightweight renderer)
 - [ ] Search within documents
-- [ ] File management actions (rename, delete, share)
 - [ ] Widget & quick-access shortcuts
 
 > ⚠️ **Note**: PPT/PPTX preview is experimental in v0.2. Complex slides may render imperfectly. Office formats (DOC/XLS) currently use external app handoff.
