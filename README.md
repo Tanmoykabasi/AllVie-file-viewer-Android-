@@ -1,6 +1,6 @@
 # AllVie 📁
 
-> **Offline Android File Viewer** — View PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX in one clean, privacy-focused app.
+> **Android File Viewer App** — View PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX in one clean, privacy-focused app.
 
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android)
 ![Language](https://img.shields.io/badge/Language-Kotlin-0095D5?logo=kotlin)
