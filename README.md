@@ -97,4 +97,3 @@ MIT License — See [LICENSE](LICENSE) for details.
 ---
 
 > Built by [Tanmoy Kabasi](https://github.com/Tanmoykabasi) using Kotlin & Jetpack Compose.
-```
