@@ -13,7 +13,7 @@
 
 ## 📦 Download
 Get the latest APK from [Releases](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases):
-- **v3.0** (June 2026) — [Allvie.apk]([https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases/download/v3.0/app-debug.apk)) (~55 MB)
+- **v3.0** (June 2026) — [Allvie.apk](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases/download/v3.0/app-debug.apk) (~55 MB)
 
 ---
 
