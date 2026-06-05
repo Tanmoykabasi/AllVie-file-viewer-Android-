@@ -1,6 +1,6 @@
 # AllVie 📁
 
-> **Android File Viewer App** — View PDF, TXT, DOC/DOCX, XLS/XLSX, and PPT/PPTX in one clean, privacy-focused app.
+> **Android File Viewer App** — View PDF, TXT, DOCX, XLS/XLSX, and PPT/PPTX in one clean, privacy-focused app.
 
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android)
 ![Language](https://img.shields.io/badge/Language-Kotlin-0095D5?logo=kotlin)
@@ -13,19 +13,21 @@
 
 ## 📦 Download
 Get the latest APK from [Releases](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases):
-- **v0.2** (May 2026) — [Allvie.apk](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases) (~54 MB)
+- **v3.0** (June 2026) — [Allvie.apk](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases) (~55 MB)
 
 ---
 
-## ✨ Features (v0.2)
-- 📄 **Native Viewers**: In-app rendering for **PDF**, **Images**, and **Plain Text**
-- 🎞️ **PPT/PPTX Preview**: Vertical Google Slides-style presentation view *(Experimental)*
-- 🌓 **Dark Mode**: Improved readability across Files, Recents, Bookmarks, Settings & viewers
-- 📑 **PDF Controls**: Page indicator + right-side scroll for smoother navigation
-- 💾 **Local Persistence**: Bookmarks & recent files stored via Room
-- ⚙️ **User Preferences**: Theme, layout mode, and storage root via DataStore
-- 🔄 **Office Handoff**: Securely opens DOC/XLS/PPT via installed apps when native preview isn't available
-- 🧹 **Clean UI**: Material 3 design with adaptive layouts for phones & tablets
+## ✨ Features (v3.0)
+- 📄 **Native Viewers**: In-app rendering for **PDF**, **Images**, **Plain Text**, **DOCX**, **XLS/XLSX**, and **PPT/PPTX**
+- 🔎 **PDF Controls**: Zoom, scrolling, page controls, dark viewer background, and password-protected PDF support
+- 📝 **DOCX Renderer**: Native `.docx` rendering with Apache POI, Canvas rendering, image support, and page caching
+- 🎞️ **Presentation Viewer**: Native PPT/PPTX slide rendering with bitmap caching and smooth slide navigation
+- 📊 **Spreadsheet Preview**: In-app XLS/XLSX table preview
+- 🌙 **Dark Mode**: Improved readability across Files, Recents, Bookmarks, Settings, and viewers
+- 💾 **Local Persistence**: Bookmarks and recent files stored via Room
+- ⚙️ **User Preferences**: Theme and layout mode via DataStore
+- 🔄 **External Handoff**: Legacy `.doc` files open with external apps for best compatibility
+- 🧹 **Clean UI**: Material 3 design with adaptive layouts for phones and tablets
 
 ---
 
@@ -39,16 +41,17 @@ Get the latest APK from [Releases](https://github.com/Tanmoykabasi/AllVie-file-v
 | Storage | Room (SQLite) + DataStore |
 | Async | Kotlin Coroutines + Flow |
 | Build | Gradle (Kotlin DSL) |
-| Min SDK | 24 (Android 7.0+) |
+| Min SDK | 26 (Android 8.0+) |
+| Target SDK | 35 |
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Android Studio Hedgehog or newer
+- Android Studio Ladybug or newer
 - JDK 17+
-- Android SDK 34+
+- Android SDK 35+
 
 ### Build from Source
 ```bash
@@ -62,7 +65,6 @@ cd AllVie-file-viewer-Android-
 📦 AllVie
  ┣ 📂 app/          → Main application module
  ┣ 📂 gradle/       → Build configuration
- ┣ 📂 stitch/       → (Custom module - see source)
  ┣ 📜 build.gradle.kts
  ┣ 📜 settings.gradle.kts
  ┗ 📜 README.md
@@ -71,12 +73,12 @@ cd AllVie-file-viewer-Android-
 ---
 
 ## 🗺️ Roadmap
-- [ ] Stabilize PPTX rendering pipeline (bitmap caching + memory optimization)
-- [ ] Add native DOC/DOCX & XLS/XLSX preview (via PDF conversion or lightweight renderer)
+## Roadmap
 - [ ] Search within documents
-- [ ] Widget & quick-access shortcuts
+- [ ] Widget and quick-access shortcuts
+- [ ] More advanced Office layout fidelity
 
-> ⚠️ **Note**: PPT/PPTX preview is experimental in v0.2. Complex slides may render imperfectly. Office formats (DOC/XLS) currently use external app handoff.
+> ⚠️ **Note**: DOCX preview is experimental in v3.0. Legacy `.doc` files are intentionally not rendered in-app.
 
 ---
 
