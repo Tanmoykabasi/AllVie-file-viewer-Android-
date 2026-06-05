@@ -5,6 +5,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,6 +30,8 @@ import com.allvie.app.domain.model.UserPreferences
 import com.allvie.app.ui.AllVieApp
 import com.allvie.app.ui.theme.AllVieTheme
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -41,7 +44,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        externalOpenFile = intent.toExternalFileItem(contentResolver)
+        removeSystemBarScrims()
+        externalOpenFile = intent.toExternalFileItem(this)
 
         setContent {
             val preferences by preferencesRepository.preferencesFlow.collectAsStateWithLifecycle(
@@ -50,12 +54,14 @@ class MainActivity : ComponentActivity() {
             var hasStorageAccess by remember { mutableStateOf(applicationContext.hasStorageAccess()) }
 
             val readPermissionLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.RequestPermission()
-            ) { granted ->
+                contract = ActivityResultContracts.RequestMultiplePermissions()
+            ) { grants ->
                 hasStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     applicationContext.hasStorageAccess()
                 } else {
-                    granted
+                    val readGranted = grants[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+                    val writeGranted = grants[Manifest.permission.WRITE_EXTERNAL_STORAGE] == true
+                    readGranted || writeGranted
                 }
             }
 
@@ -80,7 +86,15 @@ class MainActivity : ComponentActivity() {
                             .onFailure { allFilesAccessLauncher.launch(fallbackIntent) }
                     }
                 } else {
-                    readPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    val permissions = if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                        arrayOf(
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        )
+                    } else {
+                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    readPermissionLauncher.launch(permissions)
                 }
             }
 
@@ -104,40 +118,57 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        externalOpenFile = intent.toExternalFileItem(contentResolver)
+        externalOpenFile = intent.toExternalFileItem(this)
+    }
+
+    private fun removeSystemBarScrims() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 }
-
 private fun Context.hasStorageAccess(): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
     } else {
-        ContextCompat.checkSelfPermission(
+        val readGranted = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.READ_EXTERNAL_STORAGE
         ) == PackageManager.PERMISSION_GRANTED
+        val writeGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+        readGranted || writeGranted
     }
 }
 
-private fun Intent.toExternalFileItem(contentResolver: ContentResolver): FileItem? {
+private fun Intent.toExternalFileItem(context: Context): FileItem? {
     if (action != Intent.ACTION_VIEW) return null
 
     val uri = data ?: return null
+    val contentResolver = context.contentResolver
     val mimeType = type ?: contentResolver.getType(uri).orEmpty()
-    val displayName = contentResolver.query(
-        uri,
-        arrayOf(OpenableColumns.DISPLAY_NAME),
-        null,
-        null,
-        null
-    )?.use { cursor ->
-        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-    } ?: uri.lastPathSegment ?: "Document"
+    val displayName = runCatching {
+        contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+        }
+    }.getOrNull() ?: uri.lastPathSegment ?: "Document"
 
     val category = FileCategory.from(mimeType, displayName) ?: return null
+    val readableUri = makeExternalViewUriReadable(context, uri, displayName)
     return FileItem(
-        uriString = uri.toString(),
+        uriString = readableUri.toString(),
         displayName = displayName,
         mimeType = mimeType,
         category = category,
@@ -145,4 +176,44 @@ private fun Intent.toExternalFileItem(contentResolver: ContentResolver): FileIte
         lastModified = 0L,
         pathLabel = "External file"
     )
+}
+
+private fun Intent.makeExternalViewUriReadable(context: Context, uri: Uri, displayName: String): Uri {
+    if (uri.scheme?.equals(ContentResolver.SCHEME_CONTENT, ignoreCase = true) != true) {
+        return uri
+    }
+
+    if ((flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0 &&
+        (flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0
+    ) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    val copiedUri = runCatching {
+        val cacheDir = File(context.cacheDir, "external_open").apply { mkdirs() }
+        val cacheFile = File(cacheDir, "${System.currentTimeMillis()}_${displayName.safeCacheName()}")
+        val input = context.contentResolver.openInputStream(uri) ?: return@runCatching null
+        input.use {
+            FileOutputStream(cacheFile).use { output ->
+                it.copyTo(output)
+            }
+        }
+        Uri.fromFile(cacheFile)
+    }.getOrNull()
+
+    return copiedUri ?: uri.directReadableFileUri() ?: uri
+}
+
+private fun Uri.directReadableFileUri(): Uri? {
+    val directPath = path.orEmpty()
+    if (!directPath.startsWith("/storage/", ignoreCase = true)) return null
+    val file = File(directPath)
+    return if (file.isFile && file.canRead()) Uri.fromFile(file) else null
+}
+
+private fun String.safeCacheName(): String {
+    val safe = replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_')
+    return safe.ifBlank { "external_file" }
 }

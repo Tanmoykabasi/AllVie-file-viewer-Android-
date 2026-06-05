@@ -4,10 +4,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -42,7 +43,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.allvie.app.R
 import com.allvie.app.domain.model.FileItem
 import com.allvie.app.ui.screen.bookmarks.BookmarksScreen
 import com.allvie.app.ui.screen.files.FilesScreen
@@ -50,7 +50,7 @@ import com.allvie.app.ui.screen.recents.RecentsScreen
 import com.allvie.app.ui.screen.settings.SettingsScreen
 import com.allvie.app.ui.screen.viewer.ViewerScreen
 import com.allvie.app.ui.theme.AppBackgroundBrush
-import com.allvie.app.util.openFileWithSystem
+import com.allvie.app.ui.theme.allViePanelColor
 
 private enum class AppTab(val route: String, val title: String, val icon: ImageVector) {
     FILES("files", "Files", Icons.Rounded.Description),
@@ -94,8 +94,8 @@ fun AllVieApp(
             navController.navigate(ViewerDestination.createRoute(targetFile)) {
                 launchSingleTop = true
             }
-        } else if (!openFileWithSystem(context, targetFile)) {
-            Toast.makeText(context, "No compatible app installed.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "This file type is not supported in AllVie.", Toast.LENGTH_SHORT).show()
         }
         onExternalOpenFileConsumed()
     }
@@ -112,29 +112,24 @@ fun AllVieApp(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                         shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                        color = allViePanelColor(alphaLight = 0.72f, alphaDark = 0.94f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
                         tonalElevation = 2.dp,
                         shadowElevation = 6.dp
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                                .padding(horizontal = 16.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                contentDescription = null,
-                                tint = Color.Unspecified,
-                                modifier = Modifier.size(30.dp)
-                            )
                             Text(
                                 text = "AllVie",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(start = 10.dp)
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
@@ -148,28 +143,51 @@ fun AllVieApp(
             },
             bottomBar = {
                 if (!isViewer) {
+                    val bottomPanelColor = allViePanelColor(alphaLight = 0.82f, alphaDark = 0.96f)
                     Surface(
-                        tonalElevation = 2.dp,
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+                        modifier = Modifier.fillMaxWidth(),
+                        color = bottomPanelColor,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
-                        NavigationBar(
-                            containerColor = Color.Transparent
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(bottomPanelColor)
                         ) {
-                            AppTab.entries.forEach { tab ->
-                                NavigationBarItem(
-                                    selected = selectedTab == tab,
-                                    onClick = {
-                                        navController.navigate(tab.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                            NavigationBar(
+                                modifier = Modifier.height(66.dp),
+                                containerColor = bottomPanelColor,
+                                tonalElevation = 0.dp
+                            ) {
+                                AppTab.entries.forEach { tab ->
+                                    NavigationBarItem(
+                                        selected = selectedTab == tab,
+                                        onClick = {
+                                            navController.navigate(tab.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                        },
+                                        icon = {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = tab.title,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = tab.title,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
                                         }
-                                    },
-                                    icon = { Icon(imageVector = tab.icon, contentDescription = tab.title) },
-                                    label = { Text(tab.title) }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
@@ -199,10 +217,7 @@ fun AllVieApp(
                     )
                 }
                 composable(AppTab.SETTINGS.route) {
-                    SettingsScreen(
-                        hasStorageAccess = hasStorageAccess,
-                        onRequestStorageAccess = onRequestStorageAccess
-                    )
+                    SettingsScreen()
                 }
                 composable(
                     route = ViewerDestination.route,
@@ -221,7 +236,5 @@ private fun openFile(navController: NavHostController, file: FileItem, context: 
         return
     }
 
-    if (!openFileWithSystem(context, file)) {
-        Toast.makeText(context, "No compatible app installed.", Toast.LENGTH_SHORT).show()
-    }
+    Toast.makeText(context, "This file type is not supported in AllVie.", Toast.LENGTH_SHORT).show()
 }

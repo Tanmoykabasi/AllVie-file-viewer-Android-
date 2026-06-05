@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import com.allvie.app.domain.model.FileCategory
 import com.allvie.app.domain.model.FileItem
 import com.allvie.app.domain.model.LayoutMode
+import com.allvie.app.ui.theme.allVieOutlineColor
+import com.allvie.app.ui.theme.allViePanelColor
 import com.allvie.app.util.formatFileSize
 import com.allvie.app.util.formatTimestamp
 
@@ -74,10 +76,11 @@ fun GlassPane(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
+        color = allViePanelColor(alphaLight = 0.74f, alphaDark = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 4.dp,
         shadowElevation = 8.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+        border = BorderStroke(1.dp, allVieOutlineColor(alphaLight = 0.16f, alphaDark = 0.28f))
     ) {
         Column(
             modifier = Modifier
@@ -100,10 +103,11 @@ fun EmptyState(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
+        color = allViePanelColor(alphaLight = 0.74f, alphaDark = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 4.dp,
         shadowElevation = 8.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+        border = BorderStroke(1.dp, allVieOutlineColor(alphaLight = 0.16f, alphaDark = 0.28f))
     ) {
         Box(
             modifier = Modifier
@@ -163,8 +167,8 @@ fun FileCollection(
         LayoutMode.LIST -> {
             LazyColumn(
                 modifier = modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 32.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 2.dp)
             ) {
                 items(files, key = { it.uriString }) { file ->
                     ListFileCard(
@@ -183,9 +187,9 @@ fun FileCollection(
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 180.dp),
                 modifier = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 32.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                contentPadding = PaddingValues(bottom = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 gridItems(files, key = { it.uriString }) { file ->
                     GridFileCard(
@@ -216,23 +220,26 @@ private fun ListFileCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen(file) },
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        shape = RoundedCornerShape(22.dp),
+        color = allViePanelColor(alphaLight = 0.78f, alphaDark = 0.94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 3.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+        border = BorderStroke(1.dp, allVieOutlineColor(alphaLight = 0.14f, alphaDark = 0.24f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FileCategoryBadge(file.category)
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = file.displayName,
                     style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -274,16 +281,17 @@ private fun GridFileCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen(file) },
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        shape = RoundedCornerShape(24.dp),
+        color = allViePanelColor(alphaLight = 0.78f, alphaDark = 0.94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 3.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+        border = BorderStroke(1.dp, allVieOutlineColor(alphaLight = 0.14f, alphaDark = 0.24f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FileCategoryBadge(file.category)
@@ -300,6 +308,8 @@ private fun GridFileCard(
                 Text(
                     text = file.displayName,
                     style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -311,7 +321,7 @@ private fun GridFileCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = formatFileSize(context, file.size),
                 style = MaterialTheme.typography.bodySmall,
@@ -330,7 +340,7 @@ private fun GridFileCard(
 private fun FileCategoryBadge(category: FileCategory) {
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(42.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
         contentAlignment = Alignment.Center
@@ -354,7 +364,11 @@ private fun FileActionMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(imageVector = Icons.Rounded.MoreVert, contentDescription = "More actions")
+            Icon(
+                imageVector = Icons.Rounded.MoreVert,
+                contentDescription = "More actions",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
@@ -461,6 +475,4 @@ fun DeleteFileDialog(
         }
     )
 }
-
-
 

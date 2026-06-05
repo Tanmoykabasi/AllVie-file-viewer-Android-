@@ -4,15 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +25,7 @@ import com.allvie.app.data.repository.FileRepository
 import com.allvie.app.data.repository.HistoryRepository
 import com.allvie.app.domain.model.FileItem
 import com.allvie.app.domain.model.LayoutMode
+import com.allvie.app.ui.components.CompactSearchBar
 import com.allvie.app.ui.components.DeleteFileDialog
 import com.allvie.app.ui.components.FileCollection
 import com.allvie.app.ui.components.RenameFileDialog
@@ -176,17 +171,14 @@ fun BookmarksScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
 
-        OutlinedTextField(
-            value = state.searchQuery,
-            onValueChange = viewModel::onSearchChange,
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-            label = { Text("Search bookmarks") }
+        CompactSearchBar(
+            query = state.searchQuery,
+            placeholder = "Search files",
+            onQueryChange = viewModel::onSearchChange
         )
 
         Box(modifier = Modifier.weight(1f)) {
@@ -235,6 +227,4 @@ fun BookmarksScreen(
         )
     }
 }
-
-
 

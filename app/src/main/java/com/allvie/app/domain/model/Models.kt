@@ -10,8 +10,8 @@ enum class FileCategory(
     OFFICE("Office", true);
 
     companion object {
-        private val textExtensions = setOf("txt", "xml")
-        private val textMimeTypes = setOf("text/plain", "text/xml", "application/xml")
+        private val textExtensions = setOf("txt")
+        private val textMimeTypes = setOf("text/plain")
         private val officeExtensions = setOf("doc", "docx", "xls", "xlsx", "ppt", "pptx")
         private val officeMimeTypes = setOf(
             "application/msword",
@@ -42,6 +42,11 @@ enum class FileCategory(
         }
 
         fun resolve(categoryValue: String?, mimeType: String?, displayName: String): FileCategory {
+            val normalizedMime = mimeType.orEmpty().lowercase()
+            val extension = displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+            if (extension == "xml" || normalizedMime == "text/xml" || normalizedMime == "application/xml") {
+                return ALL
+            }
             return fromStoredValue(categoryValue) ?: from(mimeType, displayName) ?: ALL
         }
     }

@@ -3,8 +3,16 @@ package com.allvie.app.data.repository
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Xml
 import androidx.documentfile.provider.DocumentFile
@@ -14,26 +22,16 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.util.Locale
 import java.util.SortedMap
 import java.util.TreeMap
 import java.util.zip.ZipInputStream
-import org.apache.poi.hslf.usermodel.HSLFSlideShow
-import org.apache.poi.hssf.usermodel.HSSFWorkbook
-import org.apache.poi.hwpf.HWPFDocument
-import org.apache.poi.hwpf.extractor.WordExtractor
-import org.apache.poi.ss.usermodel.DataFormatter
-import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.ss.usermodel.Workbook
-import org.apache.poi.xslf.usermodel.XMLSlideShow
-import org.apache.poi.xslf.usermodel.XSLFTextShape
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import org.apache.poi.xwpf.extractor.XWPFWordExtractor
-import org.apache.poi.xwpf.usermodel.XWPFDocument
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -52,7 +50,68 @@ class FileRepository @Inject constructor(
         UNKNOWN
     }
 
+    private data class PresentationSize(
+        val widthEmu: Long = DEFAULT_SLIDE_WIDTH_EMU,
+        val heightEmu: Long = DEFAULT_SLIDE_HEIGHT_EMU
+    )
+
+    private data class MutableSlideShape(
+        val kind: PresentationElementKind,
+        var xEmu: Long = 0,
+        var yEmu: Long = 0,
+        var widthEmu: Long = 0,
+        var heightEmu: Long = 0,
+        var text: StringBuilder = StringBuilder(),
+        var imageUri: String? = null,
+        var placeholderType: String? = null,
+        var fontSizeSp: Float? = null,
+        var isBold: Boolean = false,
+        var textAlign: PresentationTextAlign = PresentationTextAlign.START,
+        var textColorHex: String? = null,
+        var fillColorHex: String? = null
+    )
+    private val supportedScanExtensions = setOf("pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx")
+    private val supportedScanMimeTypes = listOf(
+        "application/pdf",
+        "text/plain",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+
     suspend fun scanFiles(): List<FileItem> = withContext(Dispatchers.IO) {
+        val mediaStoreFiles = runCatching { scanFilesFromMediaStore() }
+            .getOrElse { emptyList() }
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return@withContext mediaStoreFiles
+        }
+
+        val legacyFiles = scanLegacyFiles()
+        if (legacyFiles.isEmpty()) {
+            return@withContext mediaStoreFiles
+        }
+
+        val merged = LinkedHashMap<String, FileItem>()
+        mediaStoreFiles.forEach { file ->
+            merged[fileIdentity(file)] = file
+        }
+        legacyFiles.forEach { file ->
+            val key = fileIdentity(file)
+            if (!merged.containsKey(key)) {
+                merged[key] = file
+            }
+        }
+
+        merged.values.sortedWith(
+            compareByDescending<FileItem> { it.lastModified }
+                .thenBy { it.displayName.lowercase(Locale.ROOT) }
+        )
+    }
+
+    private fun scanFilesFromMediaStore(): List<FileItem> {
         val filesUri = MediaStore.Files.getContentUri("external")
         val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Files.FileColumns.RELATIVE_PATH
@@ -69,12 +128,20 @@ class FileRepository @Inject constructor(
             pathColumn
         )
 
+        val mimePlaceholders = supportedScanMimeTypes.joinToString(separator = ",") { "?" }
+        val extensionSelection = supportedScanExtensions.joinToString(separator = " OR ") {
+            "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
+        }
+        val selection = "(${MediaStore.Files.FileColumns.MIME_TYPE} IN ($mimePlaceholders) OR $extensionSelection)"
+        val selectionArgs = supportedScanMimeTypes.toTypedArray() +
+            supportedScanExtensions.map { "%.$it" }.toTypedArray()
+
         val results = mutableListOf<FileItem>()
         context.contentResolver.query(
             filesUri,
             projection,
-            null,
-            null,
+            selection,
+            selectionArgs,
             "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
@@ -108,20 +175,121 @@ class FileRepository @Inject constructor(
             }
         }
 
-        results.sortedWith(
+        return results.sortedWith(
             compareByDescending<FileItem> { it.lastModified }
-                .thenBy { it.displayName.lowercase() }
+                .thenBy { it.displayName.lowercase(Locale.ROOT) }
         )
     }
 
+    private fun scanLegacyFiles(maxResults: Int = 40000): List<FileItem> {
+        val queue = ArrayDeque<File>()
+        val visitedDirs = HashSet<String>()
+        val results = mutableListOf<FileItem>()
+
+        legacyScanRoots().forEach { root ->
+            val rootPath = runCatching { root.canonicalPath }.getOrElse { root.absolutePath }
+            if (visitedDirs.add(rootPath)) {
+                queue.addLast(root)
+            }
+        }
+
+        while (queue.isNotEmpty() && results.size < maxResults) {
+            val dir = queue.removeFirst()
+            val children = runCatching { dir.listFiles() }.getOrNull() ?: continue
+
+            children.forEach { child ->
+                if (results.size >= maxResults) return@forEach
+
+                if (child.isDirectory) {
+                    if (child.name.startsWith(".") || child.name.equals("Android", ignoreCase = true)) {
+                        return@forEach
+                    }
+                    val canonical = runCatching { child.canonicalPath }.getOrElse { child.absolutePath }
+                    if (visitedDirs.add(canonical)) {
+                        queue.addLast(child)
+                    }
+                    return@forEach
+                }
+
+                if (!child.isFile) return@forEach
+
+                val extension = child.extension.lowercase(Locale.ROOT)
+                if (extension !in supportedScanExtensions) return@forEach
+
+                val name = child.name
+                val category = FileCategory.from(mimeTypeFromExtension(extension), name) ?: return@forEach
+                val path = child.absolutePath
+                results.add(
+                    FileItem(
+                        uriString = Uri.fromFile(child).toString(),
+                        displayName = name,
+                        mimeType = mimeTypeFromExtension(extension),
+                        category = category,
+                        size = child.length().coerceAtLeast(0),
+                        lastModified = child.lastModified().coerceAtLeast(0),
+                        pathLabel = normalizePathLabel(path)
+                    )
+                )
+            }
+        }
+
+        return results.sortedWith(
+            compareByDescending<FileItem> { it.lastModified }
+                .thenBy { it.displayName.lowercase(Locale.ROOT) }
+        )
+    }
+
+    private fun legacyScanRoots(): List<File> {
+        val roots = LinkedHashSet<String>()
+        runCatching {
+            Environment.getExternalStorageDirectory()?.absolutePath
+        }.getOrNull()?.let { path ->
+            if (path.isNotBlank()) roots.add(path)
+        }
+
+        context.getExternalFilesDirs(null)
+            .mapNotNull { it?.absolutePath }
+            .forEach { path ->
+                val rootPath = path.substringBefore("/Android/", path)
+                if (rootPath.isNotBlank()) {
+                    roots.add(rootPath)
+                }
+            }
+
+        return roots
+            .map { File(it) }
+            .filter { it.exists() && it.isDirectory }
+    }
+
+    private fun fileIdentity(file: FileItem): String {
+        val uri = Uri.parse(file.uriString)
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            return uri.path.orEmpty().lowercase(Locale.ROOT)
+        }
+        return "${file.displayName.lowercase(Locale.ROOT)}|${file.size}|${file.lastModified}"
+    }
+
+    private fun mimeTypeFromExtension(extension: String): String {
+        return when (extension.lowercase(Locale.ROOT)) {
+            "pdf" -> "application/pdf"
+            "txt" -> "text/plain"
+            "doc" -> "application/msword"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xls" -> "application/vnd.ms-excel"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "ppt" -> "application/vnd.ms-powerpoint"
+            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            else -> "application/octet-stream"
+        }
+    }
     suspend fun loadTextContent(uriString: String, maxBytes: Int = 512 * 1024): String = withContext(Dispatchers.IO) {
-        val bytes = context.contentResolver.openInputStream(Uri.parse(uriString))?.use { input ->
+        val bytes = openInputStream(Uri.parse(uriString))?.use { input ->
             input.readPreviewBytes(maxBytes + 1)
         } ?: return@withContext "Unable to read file."
 
         val truncated = bytes.size > maxBytes
         val safeBytes = bytes.copyOf(min(bytes.size, maxBytes))
-        val text = safeBytes.toString(Charsets.UTF_8)
+        val text = decodeTextBytes(safeBytes)
         if (truncated) {
             "$text\n\n[Preview truncated at ${maxBytes / 1024} KB]"
         } else {
@@ -129,20 +297,23 @@ class FileRepository @Inject constructor(
         }
     }
 
-    suspend fun loadXmlSpreadsheetRows(
-        uriString: String,
-        maxBytes: Int = 2 * 1024 * 1024,
-        maxRows: Int = 240,
-        maxCols: Int = 30
-    ): List<List<String>>? = withContext(Dispatchers.IO) {
-        val bytes = context.contentResolver.openInputStream(Uri.parse(uriString))?.use { input ->
-            input.readPreviewBytes(maxBytes)
-        } ?: return@withContext null
-
-        runCatching {
-            parseSpreadsheetXmlRows(bytes, maxRows, maxCols)
-        }.getOrNull()
+    private fun decodeTextBytes(bytes: ByteArray): String {
+        if (bytes.isEmpty()) return ""
+        return when {
+            bytes.size >= 3 &&
+                bytes[0] == 0xEF.toByte() &&
+                bytes[1] == 0xBB.toByte() &&
+                bytes[2] == 0xBF.toByte() -> bytes.copyOfRange(3, bytes.size).toString(Charsets.UTF_8)
+            bytes.size >= 2 &&
+                bytes[0] == 0xFF.toByte() &&
+                bytes[1] == 0xFE.toByte() -> bytes.copyOfRange(2, bytes.size).toString(Charsets.UTF_16LE)
+            bytes.size >= 2 &&
+                bytes[0] == 0xFE.toByte() &&
+                bytes[1] == 0xFF.toByte() -> bytes.copyOfRange(2, bytes.size).toString(Charsets.UTF_16BE)
+            else -> bytes.toString(Charsets.UTF_8)
+        }
     }
+
     suspend fun loadOfficeContent(
         uriString: String,
         displayName: String,
@@ -153,8 +324,6 @@ class FileRepository @Inject constructor(
         val reader = resolveOfficeReader(displayName, mimeType)
 
         runCatching {
-            readOfficeContentWithPoi(uri = uri, reader = reader, maxBytes = maxBytes)
-        }.recoverCatching {
             when (reader) {
                 OfficeReader.DOCX -> readDocxPreview(uri, maxBytes)
                 OfficeReader.PPTX -> readPptxPreview(uri, maxBytes)
@@ -167,7 +336,65 @@ class FileRepository @Inject constructor(
         }.getOrThrow()
     }
 
+    suspend fun loadPresentationSlides(
+        uriString: String,
+        displayName: String,
+        mimeType: String,
+        maxSlides: Int = 120,
+        maxImagesPerSlide: Int = 2,
+        maxImageBytes: Int = 1_250_000,
+        maxTextBytes: Int = 2 * 1024 * 1024
+    ): List<PresentationSlideData> = withContext(Dispatchers.IO) {
+        val uri = Uri.parse(uriString)
+        val reader = resolveOfficeReader(displayName, mimeType)
+        if (reader != OfficeReader.PPTX && reader != OfficeReader.PPT) {
+            return@withContext emptyList()
+        }
 
+        val cacheDir = File(
+            context.cacheDir,
+            "presentation_slides/${(uriString + displayName).hashCode().toUInt().toString(16)}"
+        ).apply {
+            mkdirs()
+            listFiles()?.forEach { it.delete() }
+        }
+
+        val slides = runCatching {
+            when (reader) {
+                OfficeReader.PPTX -> readPptxSlidesWithLayout(
+                    uri = uri,
+                    cacheDir = cacheDir,
+                    maxSlides = maxSlides,
+                    maxImagesPerSlide = maxImagesPerSlide,
+                    maxImageBytes = maxImageBytes
+                )
+                OfficeReader.PPT -> parsePresentationPreviewToSlides(readLegacyBinaryOfficePreview(uri, maxTextBytes))
+                    .take(maxSlides)
+                    .map { slide -> slide.withFallbackLayout() }
+                else -> emptyList()
+            }
+        }.recoverCatching {
+            when (reader) {
+                OfficeReader.PPTX -> {
+                    parsePresentationPreviewToSlides(readPptxPreview(uri, maxTextBytes))
+                        .map { slide -> slide.withFallbackLayout() }
+                }
+
+                OfficeReader.PPT -> {
+                    parsePresentationPreviewToSlides(readLegacyBinaryOfficePreview(uri, maxTextBytes))
+                        .map { slide -> slide.withFallbackLayout() }
+                }
+
+                else -> emptyList()
+            }
+        }.getOrElse { emptyList() }
+
+        renderPresentationSlidesToCache(
+            cacheDir = cacheDir,
+            slides = slides,
+            maxSlides = maxSlides
+        )
+    }
     suspend fun renameFile(file: FileItem, requestedName: String): Result<FileItem> = withContext(Dispatchers.IO) {
         runCatching {
             val cleanedName = requestedName.trim()
@@ -179,28 +406,55 @@ class FileRepository @Inject constructor(
             }
 
             val uri = Uri.parse(file.uriString)
-            if (isMediaStoreUri(uri)) {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, targetName)
-                }
-                val updatedRows = context.contentResolver.update(uri, values, null, null)
-                check(updatedRows > 0) { "Rename failed." }
+            when {
+                uri.scheme.equals("file", ignoreCase = true) -> {
+                    val sourcePath = uri.path ?: throw IllegalStateException("File path is invalid.")
+                    val sourceFile = File(sourcePath)
+                    check(sourceFile.exists()) { "File is no longer available." }
 
-                queryFileItem(uri, file.pathLabel)
-                    ?: file.copy(displayName = targetName)
-            } else {
-                val document = DocumentFile.fromSingleUri(context, uri)
-                    ?: throw IllegalStateException("File is no longer available.")
-                check(document.renameTo(targetName)) { "Rename failed." }
+                    val parent = sourceFile.parentFile ?: throw IllegalStateException("Cannot rename this file.")
+                    val targetFile = File(parent, targetName)
+                    if (targetFile.absolutePath.equals(sourceFile.absolutePath, ignoreCase = true)) {
+                        return@runCatching file
+                    }
+                    check(!targetFile.exists()) { "A file with this name already exists." }
+                    check(sourceFile.renameTo(targetFile)) { "Rename failed." }
 
-                val refreshed = DocumentFile.fromSingleUri(context, document.uri)
-                documentToFileItem(refreshed ?: document, file.pathLabel)
-                    ?: file.copy(
-                        uriString = document.uri.toString(),
-                        displayName = targetName,
-                        mimeType = document.type.orEmpty(),
-                        lastModified = document.lastModified()
+                    file.copy(
+                        uriString = Uri.fromFile(targetFile).toString(),
+                        displayName = targetFile.name,
+                        mimeType = mimeTypeFromExtension(targetFile.extension.lowercase(Locale.ROOT)),
+                        size = targetFile.length(),
+                        lastModified = targetFile.lastModified(),
+                        pathLabel = normalizePathLabel(targetFile.absolutePath)
                     )
+                }
+
+                isMediaStoreUri(uri) -> {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, targetName)
+                    }
+                    val updatedRows = context.contentResolver.update(uri, values, null, null)
+                    check(updatedRows > 0) { "Rename failed." }
+
+                    queryFileItem(uri, file.pathLabel)
+                        ?: file.copy(displayName = targetName)
+                }
+
+                else -> {
+                    val document = DocumentFile.fromSingleUri(context, uri)
+                        ?: throw IllegalStateException("File is no longer available.")
+                    check(document.renameTo(targetName)) { "Rename failed." }
+
+                    val refreshed = DocumentFile.fromSingleUri(context, document.uri)
+                    documentToFileItem(refreshed ?: document, file.pathLabel)
+                        ?: file.copy(
+                            uriString = document.uri.toString(),
+                            displayName = targetName,
+                            mimeType = document.type.orEmpty(),
+                            lastModified = document.lastModified()
+                        )
+                }
             }
         }
     }
@@ -208,13 +462,24 @@ class FileRepository @Inject constructor(
     suspend fun deleteFile(uriString: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val uri = Uri.parse(uriString)
-            if (isMediaStoreUri(uri)) {
-                val deletedRows = context.contentResolver.delete(uri, null, null)
-                check(deletedRows > 0) { "Delete failed." }
-            } else {
-                val document = DocumentFile.fromSingleUri(context, uri)
-                    ?: throw IllegalStateException("File is no longer available.")
-                check(document.delete()) { "Delete failed." }
+            when {
+                uri.scheme.equals("file", ignoreCase = true) -> {
+                    val path = uri.path ?: throw IllegalStateException("File path is invalid.")
+                    val localFile = File(path)
+                    check(localFile.exists()) { "File is no longer available." }
+                    check(localFile.delete()) { "Delete failed." }
+                }
+
+                isMediaStoreUri(uri) -> {
+                    val deletedRows = context.contentResolver.delete(uri, null, null)
+                    check(deletedRows > 0) { "Delete failed." }
+                }
+
+                else -> {
+                    val document = DocumentFile.fromSingleUri(context, uri)
+                        ?: throw IllegalStateException("File is no longer available.")
+                    check(document.delete()) { "Delete failed." }
+                }
             }
         }
     }
@@ -234,203 +499,903 @@ class FileRepository @Inject constructor(
         }
     }
 
-
-    private fun readOfficeContentWithPoi(
+    private fun readPptxSlidesWithLayout(
         uri: Uri,
-        reader: OfficeReader,
-        maxBytes: Int
-    ): String {
-        return when (reader) {
-            OfficeReader.DOCX -> readDocxWithPoi(uri, maxBytes)
-            OfficeReader.DOC -> readDocWithPoi(uri, maxBytes)
-            OfficeReader.XLSX -> readXlsxWithPoi(uri, maxBytes)
-            OfficeReader.XLS -> readXlsWithPoi(uri, maxBytes)
-            OfficeReader.PPTX -> readPptxWithPoi(uri, maxBytes)
-            OfficeReader.PPT -> readPptWithPoi(uri, maxBytes)
-            OfficeReader.UNKNOWN -> throw IllegalStateException("Unsupported Office format.")
-        }
-    }
+        cacheDir: File,
+        maxSlides: Int,
+        maxImagesPerSlide: Int,
+        maxImageBytes: Int
+    ): List<PresentationSlideData> {
+        val slideXmlEntries = readZipEntries(
+            uri = uri,
+            maxBytes = 2 * 1024 * 1024,
+            maxEntries = (maxSlides * 2) + 1,
+            include = { entryName ->
+                entryName == "ppt/presentation.xml" ||
+                    (entryName.startsWith("ppt/slides/slide") && entryName.endsWith(".xml")) ||
+                    (entryName.startsWith("ppt/slides/_rels/slide") && entryName.endsWith(".xml.rels"))
+            }
+        )
 
-    private fun readDocxWithPoi(uri: Uri, maxBytes: Int): String {
-        val text = openInputStreamOrThrow(uri).use { input ->
-            XWPFDocument(input).use { document ->
-                XWPFWordExtractor(document).use { extractor ->
-                    extractor.text.orEmpty()
+        val slideSize = parsePresentationSize(slideXmlEntries["ppt/presentation.xml"])
+        val slideEntryNames = slideXmlEntries.keys
+            .filter { it.startsWith("ppt/slides/slide") && it.endsWith(".xml") }
+            .sortedBy(::slideOrder)
+            .take(maxSlides)
+        val imageRelationshipsBySlide = slideEntryNames.associate { entryName ->
+            val relsEntryName = relationshipEntryNameForSlide(entryName)
+            entryName to parsePptxImageRelationships(
+                xmlBytes = slideXmlEntries[relsEntryName],
+                sourceEntryName = entryName,
+                maxImages = maxImagesPerSlide
+            )
+        }
+        val referencedMediaPaths = imageRelationshipsBySlide.values
+            .flatMap { it.values }
+            .distinct()
+            .toSet()
+        val persistedMediaUris = persistReferencedPresentationMedia(
+            uri = uri,
+            cacheDir = cacheDir,
+            referencedEntryNames = referencedMediaPaths,
+            maxImageBytes = maxImageBytes
+        )
+
+        val laidOutSlides = slideEntryNames.mapNotNull { entryName ->
+            val slideIndex = slideOrder(entryName)
+            val xmlBytes = slideXmlEntries[entryName] ?: return@mapNotNull null
+            val imageTargets = imageRelationshipsBySlide[entryName].orEmpty()
+            val resolvedImageUris = LinkedHashMap<String, String>()
+            imageTargets.forEach { (relationshipId, mediaEntryName) ->
+                val imageUri = persistedMediaUris[mediaEntryName]
+                if (!imageUri.isNullOrBlank()) {
+                    resolvedImageUris[relationshipId] = imageUri
+                }
+            }
+
+            runCatching {
+                val orderedImageUris = imageTargets.values
+                    .mapNotNull { persistedMediaUris[it] }
+                    .distinct()
+                    .take(maxImagesPerSlide)
+                val extractedText = runCatching { extractPresentationXmlText(xmlBytes) }.getOrDefault("")
+                val safeText = if (extractedText.isBlank() &&
+                    imageTargets.isNotEmpty() &&
+                    orderedImageUris.isEmpty()
+                ) {
+                    "Slide contains unsupported elements."
+                } else {
+                    extractedText
+                }
+                PresentationSlideData(
+                    index = slideIndex,
+                    text = safeText,
+                    imageUris = orderedImageUris,
+                    widthEmu = slideSize.widthEmu,
+                    heightEmu = slideSize.heightEmu,
+                    backgroundColorHex = "#FFFFFF",
+                    elements = parsePptxSlideElements(
+                        xmlBytes = xmlBytes,
+                        imageUrisByRelationshipId = resolvedImageUris
+                    )
+                ).withFallbackLayout()
+            }.getOrElse {
+                val fallbackText = runCatching { extractPresentationXmlText(xmlBytes) }.getOrDefault("")
+                val safeFallbackText = if (fallbackText.isBlank() && imageTargets.isNotEmpty()) {
+                    "Slide contains unsupported elements."
+                } else {
+                    fallbackText
+                }
+                if (safeFallbackText.isBlank()) {
+                    null
+                } else {
+                    PresentationSlideData(
+                        index = slideIndex,
+                        text = safeFallbackText,
+                        widthEmu = slideSize.widthEmu,
+                        heightEmu = slideSize.heightEmu,
+                        backgroundColorHex = "#FFFFFF"
+                    ).withFallbackLayout()
                 }
             }
         }
 
-        val cleaned = normalizeWhitespace(text)
-        if (cleaned.isBlank()) {
-            throw IllegalStateException("DOCX contains no readable text.")
+        if (laidOutSlides.isNotEmpty()) {
+            return laidOutSlides
         }
 
-        return truncatePreview(cleaned, maxBytes)
+        return parsePresentationPreviewToSlides(readPptxPreview(uri, 512 * 1024))
+            .take(maxSlides)
+            .map {
+                it.copy(
+                    widthEmu = slideSize.widthEmu,
+                    heightEmu = slideSize.heightEmu,
+                    backgroundColorHex = "#FFFFFF"
+                ).withFallbackLayout()
+            }
     }
 
-    private fun readDocWithPoi(uri: Uri, maxBytes: Int): String {
-        val text = openInputStreamOrThrow(uri).use { input ->
-            HWPFDocument(input).use { document ->
-                WordExtractor(document).use { extractor ->
-                    extractor.text.orEmpty()
+    private fun parsePresentationSize(xmlBytes: ByteArray?): PresentationSize {
+        if (xmlBytes == null) {
+            return PresentationSize()
+        }
+
+        val parser = Xml.newPullParser()
+        parser.setInput(ByteArrayInputStream(xmlBytes), null)
+
+        var event = parser.eventType
+        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            if (event == org.xmlpull.v1.XmlPullParser.START_TAG && localName(parser.name) == "sldSz") {
+                val width = getAttributeByLocalName(parser, "cx")?.toLongOrNull() ?: DEFAULT_SLIDE_WIDTH_EMU
+                val height = getAttributeByLocalName(parser, "cy")?.toLongOrNull() ?: DEFAULT_SLIDE_HEIGHT_EMU
+                return PresentationSize(widthEmu = width, heightEmu = height)
+            }
+            event = parser.next()
+        }
+
+        return PresentationSize()
+    }
+
+    private fun relationshipEntryNameForSlide(slideEntryName: String): String {
+        val fileName = slideEntryName.substringAfterLast('/')
+        return "${slideEntryName.substringBeforeLast('/')}/_rels/$fileName.rels"
+    }
+
+    private fun parsePptxImageRelationships(
+        xmlBytes: ByteArray?,
+        sourceEntryName: String,
+        maxImages: Int
+    ): LinkedHashMap<String, String> {
+        if (xmlBytes == null) return linkedMapOf()
+
+        val parser = Xml.newPullParser()
+        parser.setInput(ByteArrayInputStream(xmlBytes), null)
+
+        val relationships = LinkedHashMap<String, String>()
+        var event = parser.eventType
+        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            if (event == org.xmlpull.v1.XmlPullParser.START_TAG &&
+                localName(parser.name) == "Relationship"
+            ) {
+                val id = getAttributeByLocalName(parser, "Id").orEmpty()
+                val type = getAttributeByLocalName(parser, "Type").orEmpty()
+                val target = getAttributeByLocalName(parser, "Target").orEmpty()
+                if (id.isNotBlank() &&
+                    target.isNotBlank() &&
+                    type.contains("/image", ignoreCase = true)
+                ) {
+                    relationships[id] = resolveZipEntryTarget(sourceEntryName, target)
+                    if (relationships.size >= maxImages) {
+                        break
+                    }
+                }
+            }
+            event = parser.next()
+        }
+
+        return relationships
+    }
+
+    private fun resolveZipEntryTarget(sourceEntryName: String, rawTarget: String): String {
+        val baseSegments = sourceEntryName
+            .substringBeforeLast('/', missingDelimiterValue = "")
+            .split('/')
+            .filter { it.isNotBlank() }
+            .toMutableList()
+        val targetSegments = rawTarget
+            .substringBefore('#')
+            .replace('\\', '/')
+            .split('/')
+            .filter { it.isNotBlank() && it != "." }
+
+        targetSegments.forEach { segment ->
+            if (segment == "..") {
+                if (baseSegments.isNotEmpty()) {
+                    baseSegments.removeAt(baseSegments.lastIndex)
+                }
+            } else {
+                baseSegments.add(segment)
+            }
+        }
+
+        return baseSegments.joinToString(separator = "/")
+    }
+
+    private fun persistReferencedPresentationMedia(
+        uri: Uri,
+        cacheDir: File,
+        referencedEntryNames: Set<String>,
+        maxImageBytes: Int
+    ): Map<String, String> {
+        if (referencedEntryNames.isEmpty()) return emptyMap()
+
+        val persisted = mutableMapOf<String, String>()
+        val maxSourceImageBytes = (maxImageBytes * 4)
+            .coerceAtLeast(maxImageBytes)
+            .coerceAtMost(5 * 1024 * 1024)
+        openInputStream(uri)?.use { input ->
+            ZipInputStream(BufferedInputStream(input)).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val entryName = entry.name
+                    if (!entry.isDirectory &&
+                        !entryName.isNullOrBlank() &&
+                        referencedEntryNames.contains(entryName)
+                    ) {
+                        val declaredSize = entry.size
+                        if (declaredSize <= maxSourceImageBytes || declaredSize < 0) {
+                            val bytes = zip.readPreviewBytes(maxSourceImageBytes + 1)
+                            if (bytes.size <= maxSourceImageBytes) {
+                                val persistedUri = persistPresentationImage(
+                                    cacheDir = cacheDir,
+                                    slideIndex = persisted.size + 1,
+                                    imageIndex = 0,
+                                    bytes = bytes,
+                                    contentType = contentTypeFromEntryName(entryName),
+                                    maxOutputBytes = maxImageBytes
+                                )
+                                if (!persistedUri.isNullOrBlank()) {
+                                    persisted[entryName] = persistedUri
+                                }
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        } ?: throw IllegalStateException("Unable to open file.")
+
+        return persisted
+    }
+
+    private fun parsePptxSlideElements(
+        xmlBytes: ByteArray,
+        imageUrisByRelationshipId: Map<String, String>
+    ): List<PresentationElementData> {
+        val parser = Xml.newPullParser()
+        parser.setInput(ByteArrayInputStream(xmlBytes), null)
+
+        val elements = mutableListOf<PresentationElementData>()
+        var currentShape: MutableSlideShape? = null
+        var captureText = false
+        var insideTransform = false
+        var insideTextStyle = false
+
+        var event = parser.eventType
+        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                org.xmlpull.v1.XmlPullParser.START_TAG -> {
+                    when (localName(parser.name)) {
+                        "sp" -> currentShape = MutableSlideShape(kind = PresentationElementKind.TEXT)
+                        "pic" -> currentShape = MutableSlideShape(kind = PresentationElementKind.IMAGE)
+                        "xfrm" -> if (currentShape != null) insideTransform = true
+                        "off" -> {
+                            if (insideTransform) {
+                                currentShape?.xEmu = getAttributeByLocalName(parser, "x")?.toLongOrNull() ?: 0L
+                                currentShape?.yEmu = getAttributeByLocalName(parser, "y")?.toLongOrNull() ?: 0L
+                            }
+                        }
+                        "ext" -> {
+                            if (insideTransform) {
+                                currentShape?.widthEmu = getAttributeByLocalName(parser, "cx")?.toLongOrNull() ?: 0L
+                                currentShape?.heightEmu = getAttributeByLocalName(parser, "cy")?.toLongOrNull() ?: 0L
+                            }
+                        }
+                        "ph" -> {
+                            if (currentShape?.kind == PresentationElementKind.TEXT) {
+                                currentShape.placeholderType = getAttributeByLocalName(parser, "type")
+                            }
+                        }
+                        "pPr" -> {
+                            if (currentShape?.kind == PresentationElementKind.TEXT) {
+                                currentShape.textAlign = parsePresentationTextAlign(
+                                    getAttributeByLocalName(parser, "algn"),
+                                    currentShape.placeholderType
+                                )
+                            }
+                        }
+                        "rPr", "defRPr", "endParaRPr" -> {
+                            if (currentShape?.kind == PresentationElementKind.TEXT) {
+                                insideTextStyle = true
+                                currentShape.fontSizeSp = currentShape.fontSizeSp
+                                    ?: getAttributeByLocalName(parser, "sz")?.toFloatOrNull()?.div(100f)
+                                val bold = getAttributeByLocalName(parser, "b")
+                                if (bold == "1" || bold.equals("true", ignoreCase = true)) {
+                                    currentShape.isBold = true
+                                }
+                            }
+                        }
+                        "srgbClr" -> {
+                            if (currentShape?.kind == PresentationElementKind.TEXT && insideTextStyle) {
+                                val rawColor = getAttributeByLocalName(parser, "val")
+                                if (!rawColor.isNullOrBlank() && currentShape.textColorHex.isNullOrBlank()) {
+                                    currentShape.textColorHex = "#$rawColor"
+                                }
+                            }
+                        }
+                        "blip" -> {
+                            if (currentShape?.kind == PresentationElementKind.IMAGE) {
+                                val relationshipId = getAttributeByLocalName(parser, "embed")
+                                if (!relationshipId.isNullOrBlank()) {
+                                    currentShape.imageUri = imageUrisByRelationshipId[relationshipId]
+                                }
+                            }
+                        }
+                        "t" -> if (currentShape?.kind == PresentationElementKind.TEXT) captureText = true
+                        "br" -> if (currentShape?.kind == PresentationElementKind.TEXT) appendLineBreak(currentShape.text)
+                    }
+                }
+
+                org.xmlpull.v1.XmlPullParser.TEXT -> {
+                    if (captureText && currentShape?.kind == PresentationElementKind.TEXT) {
+                        currentShape.text.append(parser.text.orEmpty())
+                    }
+                }
+
+                org.xmlpull.v1.XmlPullParser.END_TAG -> {
+                    when (localName(parser.name)) {
+                        "t" -> captureText = false
+                        "p" -> if (currentShape?.kind == PresentationElementKind.TEXT) appendLineBreak(currentShape.text)
+                        "xfrm" -> insideTransform = false
+                        "rPr", "defRPr", "endParaRPr" -> insideTextStyle = false
+                        "sp" -> {
+                            currentShape?.toPresentationElement()?.let(elements::add)
+                            currentShape = null
+                            captureText = false
+                            insideTransform = false
+                            insideTextStyle = false
+                        }
+                        "pic" -> {
+                            currentShape?.toPresentationElement()?.let(elements::add)
+                            currentShape = null
+                            insideTransform = false
+                            insideTextStyle = false
+                        }
+                    }
+                }
+            }
+            event = parser.next()
+        }
+
+        return elements
+    }
+
+    private fun MutableSlideShape.toPresentationElement(): PresentationElementData? {
+        val safeWidth = if (widthEmu > 0) widthEmu else DEFAULT_SLIDE_WIDTH_EMU - (DEFAULT_SLIDE_WIDTH_EMU / 10)
+        val safeHeight = if (heightEmu > 0) heightEmu else DEFAULT_SLIDE_HEIGHT_EMU / 5
+        val safeX = xEmu.coerceAtLeast(0)
+        val safeY = yEmu.coerceAtLeast(0)
+
+        return when (kind) {
+            PresentationElementKind.TEXT -> {
+                val normalizedText = normalizeWhitespace(text.toString())
+                if (normalizedText.isBlank()) {
+                    null
+                } else {
+                    PresentationElementData(
+                        kind = PresentationElementKind.TEXT,
+                        xEmu = safeX,
+                        yEmu = safeY,
+                        widthEmu = safeWidth,
+                        heightEmu = safeHeight,
+                        text = normalizedText,
+                        fontSizeSp = fontSizeSp ?: defaultFontSizeForPlaceholder(placeholderType, safeHeight),
+                        isBold = isBold || isTitlePlaceholder(placeholderType),
+                        textAlign = textAlign,
+                        textColorHex = textColorHex ?: "#111111",
+                        fillColorHex = fillColorHex
+                    )
+                }
+            }
+
+            PresentationElementKind.IMAGE -> {
+                val uri = imageUri
+                if (uri.isNullOrBlank()) {
+                    null
+                } else {
+                    PresentationElementData(
+                        kind = PresentationElementKind.IMAGE,
+                        xEmu = safeX,
+                        yEmu = safeY,
+                        widthEmu = safeWidth,
+                        heightEmu = if (heightEmu > 0) heightEmu else DEFAULT_SLIDE_HEIGHT_EMU / 2,
+                        imageUri = uri
+                    )
                 }
             }
         }
-
-        val cleaned = normalizeWhitespace(text)
-        if (cleaned.isBlank()) {
-            throw IllegalStateException("DOC contains no readable text.")
-        }
-
-        return truncatePreview(cleaned, maxBytes)
     }
 
-    private fun readXlsxWithPoi(uri: Uri, maxBytes: Int): String {
-        val preview = openInputStreamOrThrow(uri).use { input ->
-            XSSFWorkbook(input).use { workbook ->
-                workbookToPreview(workbook)
+    private fun PresentationSlideData.withFallbackLayout(): PresentationSlideData {
+        if (elements.isNotEmpty()) {
+            return this
+        }
+
+        return copy(
+            elements = buildFallbackPresentationElements(
+                text = text,
+                imageUris = imageUris,
+                slideWidthEmu = widthEmu,
+                slideHeightEmu = heightEmu
+            )
+        )
+    }
+
+    private fun buildFallbackPresentationElements(
+        text: String,
+        imageUris: List<String>,
+        slideWidthEmu: Long,
+        slideHeightEmu: Long
+    ): List<PresentationElementData> {
+        val elements = mutableListOf<PresentationElementData>()
+        val horizontalMargin = slideWidthEmu / 14
+        val topMargin = slideHeightEmu / 16
+        val bottomMargin = slideHeightEmu / 16
+        val usableWidth = slideWidthEmu - (horizontalMargin * 2)
+        val verticalGap = slideHeightEmu / 30
+        var currentTop = topMargin
+
+        if (text.isNotBlank()) {
+            val hasImages = imageUris.isNotEmpty()
+            val textHeight = if (hasImages) slideHeightEmu / 3 else slideHeightEmu - topMargin - bottomMargin
+            elements += PresentationElementData(
+                kind = PresentationElementKind.TEXT,
+                xEmu = horizontalMargin,
+                yEmu = currentTop,
+                widthEmu = usableWidth,
+                heightEmu = textHeight,
+                text = text,
+                fontSizeSp = if (text.length <= 80) 28f else 18f,
+                isBold = ((text.lineSequence().firstOrNull()?.length ?: 0) in 1..42),
+                textColorHex = "#111111"
+            )
+            currentTop += textHeight + verticalGap
+        }
+
+        if (imageUris.isNotEmpty()) {
+            val visibleImages = imageUris.take(3)
+            val remainingHeight = (slideHeightEmu - currentTop - bottomMargin).coerceAtLeast(slideHeightEmu / 4)
+            val slotHeight = (remainingHeight / visibleImages.size).coerceAtLeast(slideHeightEmu / 5)
+            visibleImages.forEachIndexed { index, imageUri ->
+                elements += PresentationElementData(
+                    kind = PresentationElementKind.IMAGE,
+                    xEmu = horizontalMargin,
+                    yEmu = currentTop + (index * slotHeight),
+                    widthEmu = usableWidth,
+                    heightEmu = (slotHeight - (verticalGap / 2)).coerceAtLeast(slideHeightEmu / 6),
+                    imageUri = imageUri
+                )
             }
         }
 
-        return truncatePreview(preview, maxBytes)
+        return elements
     }
 
-    private fun readXlsWithPoi(uri: Uri, maxBytes: Int): String {
-        val preview = openInputStreamOrThrow(uri).use { input ->
-            HSSFWorkbook(input).use { workbook ->
-                workbookToPreview(workbook)
-            }
-        }
-
-        return truncatePreview(preview, maxBytes)
-    }
-
-    private fun readPptxWithPoi(uri: Uri, maxBytes: Int): String {
-        val preview = openInputStreamOrThrow(uri).use { input ->
-            XMLSlideShow(input).use { slideShow ->
-                val slides = slideShow.slides
-                buildString {
-                    slides.take(120).forEachIndexed { index, slide ->
-                        val slideText = slide.shapes
-                            .mapNotNull { shape -> (shape as? XSLFTextShape)?.text?.trim() }
-                            .filter { it.isNotBlank() }
-                            .joinToString(separator = "\n")
-
-                        if (slideText.isNotBlank()) {
-                            append("Slide ${index + 1}\n")
-                            append(slideText)
-                            append("\n\n")
-                        }
-                    }
-                }.trim()
-            }
-        }
-
-        if (preview.isBlank()) {
-            throw IllegalStateException("PPTX contains no readable slides.")
-        }
-
-        return truncatePreview(preview, maxBytes)
-    }
-
-    private fun readPptWithPoi(uri: Uri, maxBytes: Int): String {
-        val preview = openInputStreamOrThrow(uri).use { input ->
-            HSLFSlideShow(input).use { slideShow ->
-                val slides = slideShow.slides
-                buildString {
-                    slides.take(120).forEachIndexed { index, slide ->
-                        val slideText = slide.shapes
-                            .mapNotNull { shape -> (shape as? org.apache.poi.hslf.usermodel.HSLFTextShape)?.text?.trim() }
-                            .filter { it.isNotBlank() }
-                            .joinToString(separator = "\n")
-
-                        if (slideText.isNotBlank()) {
-                            append("Slide ${index + 1}\n")
-                            append(slideText)
-                            append("\n\n")
-                        }
-                    }
-                }.trim()
-            }
-        }
-
-        if (preview.isBlank()) {
-            throw IllegalStateException("PPT contains no readable slides.")
-        }
-
-        return truncatePreview(preview, maxBytes)
-    }
-
-    private fun workbookToPreview(
-        workbook: Workbook,
-        maxSheets: Int = 8,
-        maxRows: Int = 240,
-        maxCols: Int = 30
-    ): String {
-        val formatter = DataFormatter(Locale.ROOT)
-        var emittedRows = 0
-
-        val preview = buildString {
-            val sheetCount = min(workbook.numberOfSheets, maxSheets)
-            for (sheetIndex in 0 until sheetCount) {
-                if (emittedRows >= maxRows) break
-
-                val sheet = workbook.getSheetAt(sheetIndex)
-                val header = "Sheet ${sheetIndex + 1}: ${sheet.sheetName}".trim()
-                append(header)
-                append('\n')
-
-                val firstRow = sheet.firstRowNum.coerceAtLeast(0)
-                val lastRow = sheet.lastRowNum.coerceAtLeast(firstRow)
-
-                for (rowIndex in firstRow..lastRow) {
-                    if (emittedRows >= maxRows) break
-
-                    val row = sheet.getRow(rowIndex) ?: continue
-                    val lastCell = row.lastCellNum.toInt().coerceAtLeast(0).coerceAtMost(maxCols)
-                    if (lastCell <= 0) continue
-
-                    val values = MutableList(lastCell) { columnIndex ->
-                        val cell = row.getCell(columnIndex, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL)
-                        if (cell == null) {
-                            ""
-                        } else {
-                            runCatching { formatter.formatCellValue(cell) }
-                                .getOrElse { cell.toString() }
-                                .trim()
-                        }
-                    }
-
-                    var lastNonBlank = values.size - 1
-                    while (lastNonBlank >= 0 && values[lastNonBlank].isBlank()) {
-                        lastNonBlank -= 1
-                    }
-                    if (lastNonBlank < 0) continue
-
-                    append(values.subList(0, lastNonBlank + 1).joinToString(separator = "\t"))
-                    append('\n')
-                    emittedRows += 1
+    private fun parsePresentationTextAlign(
+        rawAlignment: String?,
+        placeholderType: String?
+    ): PresentationTextAlign {
+        return when (rawAlignment?.lowercase(Locale.ROOT)) {
+            "ctr", "dist", "just" -> PresentationTextAlign.CENTER
+            "r" -> PresentationTextAlign.END
+            else -> {
+                when (placeholderType?.lowercase(Locale.ROOT)) {
+                    "ctrtitle", "subtitle" -> PresentationTextAlign.CENTER
+                    else -> PresentationTextAlign.START
                 }
-
-                append('\n')
             }
-
-            if (emittedRows >= maxRows) {
-                append("[Preview truncated at $maxRows rows]")
-            }
-        }.trim()
-
-        if (preview.isBlank()) {
-            throw IllegalStateException("Spreadsheet contains no readable cells.")
         }
-
-        return preview
     }
 
-    private fun openInputStreamOrThrow(uri: Uri): InputStream {
+    private fun defaultFontSizeForPlaceholder(
+        placeholderType: String?,
+        heightEmu: Long
+    ): Float {
+        return when (placeholderType?.lowercase(Locale.ROOT)) {
+            "title", "ctrtitle" -> 28f
+            "subtitle" -> 20f
+            else -> if (heightEmu >= DEFAULT_SLIDE_HEIGHT_EMU / 3) 20f else 16f
+        }
+    }
+
+    private fun isTitlePlaceholder(placeholderType: String?): Boolean {
+        return when (placeholderType?.lowercase(Locale.ROOT)) {
+            "title", "ctrtitle" -> true
+            else -> false
+        }
+    }
+
+    private fun appendLineBreak(buffer: StringBuilder) {
+        if (buffer.isNotEmpty() && buffer.last() != '\n') {
+            buffer.append('\n')
+        }
+    }
+
+    private fun renderPresentationSlidesToCache(
+        cacheDir: File,
+        slides: List<PresentationSlideData>,
+        maxSlides: Int
+    ): List<PresentationSlideData> {
+        if (slides.isEmpty()) return emptyList()
+
+        val renderDir = File(cacheDir, "rendered").apply {
+            mkdirs()
+            listFiles()?.forEach { it.delete() }
+        }
+
+        return slides.take(maxSlides).map { slide ->
+            runCatching {
+                val imageUri = renderSlideToJpeg(renderDir, slide)
+                if (imageUri.isNullOrBlank()) slide else slide.copy(renderedImageUri = imageUri)
+            }.getOrDefault(slide)
+        }
+    }
+
+    private fun renderSlideToJpeg(
+        renderDir: File,
+        slide: PresentationSlideData
+    ): String? {
+        val aspectRatio = (slide.widthEmu.toFloat() / slide.heightEmu.coerceAtLeast(1L).toFloat())
+            .takeIf { it.isFinite() && it > 0f } ?: (4f / 3f)
+        val targetWidth = 1280
+        val targetHeight = (targetWidth / aspectRatio).roundToInt().coerceIn(720, 1280)
+        val bitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        val backgroundColor = slide.backgroundColorHex.toAndroidColorOrNull() ?: Color.WHITE
+        canvas.drawColor(backgroundColor)
+
+        val slideWidth = slide.widthEmu.coerceAtLeast(1L).toFloat()
+        val slideHeight = slide.heightEmu.coerceAtLeast(1L).toFloat()
+        slide.elements.forEach { element ->
+            val rect = RectF(
+                targetWidth * (element.xEmu.toFloat() / slideWidth),
+                targetHeight * (element.yEmu.toFloat() / slideHeight),
+                targetWidth * ((element.xEmu + element.widthEmu).toFloat() / slideWidth),
+                targetHeight * ((element.yEmu + element.heightEmu).toFloat() / slideHeight)
+            )
+            if (rect.width() <= 1f || rect.height() <= 1f) return@forEach
+
+            when (element.kind) {
+                PresentationElementKind.TEXT -> drawSlideText(canvas, rect, element, targetWidth)
+                PresentationElementKind.IMAGE -> drawSlideImage(canvas, rect, element.imageUri)
+            }
+        }
+
+        if (slide.elements.isEmpty() && slide.text.isNotBlank()) {
+            val fallbackElement = PresentationElementData(
+                kind = PresentationElementKind.TEXT,
+                xEmu = slide.widthEmu / 12,
+                yEmu = slide.heightEmu / 10,
+                widthEmu = slide.widthEmu - (slide.widthEmu / 6),
+                heightEmu = slide.heightEmu - (slide.heightEmu / 5),
+                text = slide.text,
+                fontSizeSp = if (slide.text.length <= 80) 30f else 20f,
+                textColorHex = "#111111"
+            )
+            drawSlideText(
+                canvas = canvas,
+                rect = RectF(
+                    targetWidth / 12f,
+                    targetHeight / 10f,
+                    targetWidth - (targetWidth / 12f),
+                    targetHeight - (targetHeight / 10f)
+                ),
+                element = fallbackElement,
+                renderWidth = targetWidth
+            )
+        }
+
+        val output = File(renderDir, "slide_${slide.index.coerceAtLeast(1)}.jpg")
+        return try {
+            output.outputStream().use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 86, stream)
+            }
+            Uri.fromFile(output).toString()
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun drawSlideText(
+        canvas: Canvas,
+        rect: RectF,
+        element: PresentationElementData,
+        renderWidth: Int
+    ) {
+        val fill = element.fillColorHex.toAndroidColorOrNull()
+        if (fill != null) {
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = fill
+                style = Paint.Style.FILL
+                alpha = 44
+                canvas.drawRect(rect, this)
+            }
+        }
+
+        val fontPx = ((element.fontSizeSp ?: 18f) * (renderWidth / 960f)).coerceIn(16f, 72f)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = element.textColorHex.toAndroidColorOrNull() ?: Color.rgb(17, 17, 17)
+            textSize = fontPx
+            typeface = if (element.isBold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            textAlign = when (element.textAlign) {
+                PresentationTextAlign.CENTER -> Paint.Align.CENTER
+                PresentationTextAlign.END -> Paint.Align.RIGHT
+                PresentationTextAlign.START -> Paint.Align.LEFT
+            }
+        }
+        val padding = (fontPx * 0.35f).coerceAtLeast(6f)
+        val maxTextWidth = (rect.width() - (padding * 2)).coerceAtLeast(1f)
+        val lines = wrapSlideText(element.text, paint, maxTextWidth)
+        val lineHeight = fontPx * 1.22f
+        var baseline = rect.top + padding + fontPx
+        val anchorX = when (element.textAlign) {
+            PresentationTextAlign.CENTER -> rect.centerX()
+            PresentationTextAlign.END -> rect.right - padding
+            PresentationTextAlign.START -> rect.left + padding
+        }
+
+        for (line in lines) {
+            if (baseline > rect.bottom - padding) break
+            canvas.drawText(line, anchorX, baseline, paint)
+            baseline += lineHeight
+        }
+    }
+
+    private fun wrapSlideText(
+        text: String,
+        paint: Paint,
+        maxWidth: Float
+    ): List<String> {
+        val lines = mutableListOf<String>()
+        text.lineSequence().forEach { paragraph ->
+            var current = ""
+            paragraph.split(Regex("\\s+")).filter { it.isNotBlank() }.forEach { word ->
+                val candidate = if (current.isBlank()) word else "$current $word"
+                if (paint.measureText(candidate) <= maxWidth) {
+                    current = candidate
+                } else {
+                    if (current.isNotBlank()) lines.add(current)
+                    current = word
+                }
+            }
+            if (current.isNotBlank()) {
+                lines.add(current)
+            }
+        }
+        return lines
+    }
+
+    private fun drawSlideImage(
+        canvas: Canvas,
+        rect: RectF,
+        imageUri: String?
+    ) {
+        if (imageUri.isNullOrBlank()) return
+
+        val bitmap = decodeSlideImage(imageUri, rect.width().roundToInt(), rect.height().roundToInt())
+            ?: return
+        try {
+            canvas.drawBitmap(bitmap, null, rect, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun decodeSlideImage(
+        imageUri: String,
+        targetWidth: Int,
+        targetHeight: Int
+    ): Bitmap? {
+        val uri = Uri.parse(imageUri)
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        } ?: return null
+
+        var sample = 1
+        while ((bounds.outWidth / sample) > targetWidth * 2 ||
+            (bounds.outHeight / sample) > targetHeight * 2
+        ) {
+            sample *= 2
+        }
+
+        return openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(
+                input,
+                null,
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+            )
+        }
+    }
+
+    private fun String?.toAndroidColorOrNull(): Int? {
+        val raw = this?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching { Color.parseColor(if (raw.startsWith("#")) raw else "#$raw") }
+            .getOrNull()
+    }
+
+    private fun parsePresentationPreviewToSlides(content: String): List<PresentationSlideData> {
+        if (content.isBlank()) return emptyList()
+
+        val normalized = content.replace("\r\n", "\n")
+        val markerRegex = Regex("(?m)^Slide\\s+\\d+\\b.*$")
+        val markers = markerRegex.findAll(normalized).toList()
+
+        if (markers.isEmpty()) {
+            return normalized
+                .split("\n\n")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .take(120)
+                .mapIndexed { index, body ->
+                    PresentationSlideData(index = index + 1, text = body)
+                }
+        }
+
+        val slides = mutableListOf<PresentationSlideData>()
+        markers.forEachIndexed { markerIndex, match ->
+            val start = match.range.first
+            val end = if (markerIndex + 1 < markers.size) {
+                markers[markerIndex + 1].range.first
+            } else {
+                normalized.length
+            }
+            val chunk = normalized.substring(start, end).trim()
+            if (chunk.isNotBlank()) {
+                val label = match.value
+                val number = Regex("\\d+").find(label)?.value?.toIntOrNull() ?: (markerIndex + 1)
+                val body = chunk.replaceFirst(Regex("^Slide\\s+\\d+\\s*\\n?"), "").trim()
+                slides.add(PresentationSlideData(index = number, text = body.ifBlank { chunk }))
+            }
+        }
+
+        return slides.take(120)
+    }
+
+    private fun persistPresentationImage(
+        cacheDir: File,
+        slideIndex: Int,
+        imageIndex: Int,
+        bytes: ByteArray,
+        contentType: String?,
+        maxOutputBytes: Int = Int.MAX_VALUE
+    ): String? {
+        if (bytes.isEmpty()) return null
+        if (!cacheDir.exists()) {
+            cacheDir.mkdirs()
+        }
+
+        val optimized = optimizePresentationImage(
+            bytes = bytes,
+            contentType = contentType,
+            maxOutputBytes = maxOutputBytes
+        ) ?: return null
+        val hash = optimized.bytes.contentHashCode().toUInt().toString(16)
+        val extension = optimized.extension
+        val file = File(cacheDir, "slide_${slideIndex}_${imageIndex}_$hash.$extension")
+        runCatching {
+            if (!file.exists()) {
+                file.writeBytes(optimized.bytes)
+            }
+        }.getOrElse {
+            return null
+        }
+        return Uri.fromFile(file).toString()
+    }
+
+    private data class OptimizedPresentationImage(
+        val bytes: ByteArray,
+        val extension: String
+    )
+
+    private fun optimizePresentationImage(
+        bytes: ByteArray,
+        contentType: String?,
+        maxOutputBytes: Int
+    ): OptimizedPresentationImage? {
+        val defaultExtension = extensionFromContentType(contentType)
+        if (bytes.isEmpty()) return null
+        if (bytes.size <= maxOutputBytes) {
+            return OptimizedPresentationImage(bytes = bytes, extension = defaultExtension)
+        }
+
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        runCatching {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        }.getOrElse {
+            return null
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null
+        }
+
+        var inSampleSize = 1
+        while ((bounds.outWidth / inSampleSize) > 1600 ||
+            (bounds.outHeight / inSampleSize) > 1600 ||
+            (bytes.size / inSampleSize) > maxOutputBytes
+        ) {
+            inSampleSize *= 2
+        }
+
+        val bitmap = runCatching {
+            BitmapFactory.decodeByteArray(
+                bytes,
+                0,
+                bytes.size,
+                BitmapFactory.Options().apply {
+                    this.inSampleSize = inSampleSize
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+            )
+        }.getOrNull() ?: return null
+
+        return try {
+            val prefersAlpha = bitmap.hasAlpha()
+            val output = ByteArrayOutputStream()
+            val extension = if (prefersAlpha) "png" else "jpg"
+            val format = if (prefersAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+            var quality = 88
+
+            do {
+                output.reset()
+                bitmap.compress(format, quality, output)
+                if (prefersAlpha) {
+                    break
+                }
+                quality -= 10
+            } while (output.size() > maxOutputBytes && quality >= 58)
+
+            if (output.size() > maxOutputBytes) {
+                null
+            } else {
+                OptimizedPresentationImage(
+                    bytes = output.toByteArray(),
+                    extension = extension
+                )
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun extensionFromContentType(contentType: String?): String {
+        val normalized = contentType.orEmpty().lowercase(Locale.ROOT)
+        return when {
+            "png" in normalized -> "png"
+            "jpeg" in normalized || "jpg" in normalized -> "jpg"
+            "gif" in normalized -> "gif"
+            "webp" in normalized -> "webp"
+            "bmp" in normalized -> "bmp"
+            else -> "png"
+        }
+    }
+
+    private fun contentTypeFromEntryName(entryName: String): String? {
+        return when (entryName.substringAfterLast('.', missingDelimiterValue = "").lowercase(Locale.ROOT)) {
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            else -> null
+        }
+    }
+
+    private fun openInputStream(uri: Uri): InputStream? {
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            val path = uri.path ?: return null
+            return runCatching { File(path).inputStream() }.getOrNull()
+        }
         return context.contentResolver.openInputStream(uri)
-            ?: throw IllegalStateException("Unable to open file stream.")
     }
+
     private fun readDocxPreview(uri: Uri, maxBytes: Int): String {
         val xmlEntries = readZipEntries(
             uri = uri,
@@ -478,6 +1443,7 @@ class FileRepository @Inject constructor(
         val slideEntries = readZipEntries(
             uri = uri,
             maxBytes = maxBytes,
+            maxEntries = 120,
             include = { name ->
                 name.startsWith("ppt/slides/slide") && name.endsWith(".xml")
             }
@@ -549,7 +1515,7 @@ class FileRepository @Inject constructor(
     }
 
     private fun readLegacyBinaryOfficePreview(uri: Uri, maxBytes: Int): String {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
+        val bytes = openInputStream(uri)?.use { input ->
             input.readPreviewBytes(maxBytes)
         } ?: throw IllegalStateException("Unable to read file.")
 
@@ -581,18 +1547,26 @@ class FileRepository @Inject constructor(
     private fun readZipEntries(
         uri: Uri,
         maxBytes: Int,
+        maxEntries: Int = Int.MAX_VALUE,
         include: (String) -> Boolean
     ): Map<String, ByteArray> {
         val result = mutableMapOf<String, ByteArray>()
         val perEntryLimit = min(maxBytes, 512 * 1024)
 
-        context.contentResolver.openInputStream(uri)?.use { input ->
+        openInputStream(uri)?.use { input ->
             ZipInputStream(BufferedInputStream(input)).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
-                    val entryName = entry.name ?: continue
-                    if (!entry.isDirectory && include(entryName)) {
+                    val entryName = entry.name
+                    if (!entry.isDirectory &&
+                        !entryName.isNullOrBlank() &&
+                        include(entryName)
+                    ) {
                         result[entryName] = zip.readPreviewBytes(perEntryLimit)
+                        if (result.size >= maxEntries) {
+                            zip.closeEntry()
+                            break
+                        }
                     }
                     zip.closeEntry()
                 }
@@ -703,95 +1677,6 @@ class FileRepository @Inject constructor(
         }
 
         return values
-    }
-
-    private fun parseSpreadsheetXmlRows(
-        xmlBytes: ByteArray,
-        maxRows: Int,
-        maxCols: Int
-    ): List<List<String>>? {
-        val parser = Xml.newPullParser()
-        parser.setInput(ByteArrayInputStream(xmlBytes), null)
-
-        val rows = mutableListOf<List<String>>()
-        var currentRow: MutableList<String>? = null
-        var currentCellText: StringBuilder? = null
-        var captureData = false
-
-        var event = parser.eventType
-        while (event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT && rows.size < maxRows) {
-            when (event) {
-                org.xmlpull.v1.XmlPullParser.START_TAG -> {
-                    when (localName(parser.name).lowercase(Locale.ROOT)) {
-                        "row" -> {
-                            val row = mutableListOf<String>()
-                            val rowIndex = getAttributeByLocalName(parser, "Index")?.toIntOrNull()
-                            if (rowIndex != null && rowIndex > rows.size + 1) {
-                                while (rows.size < rowIndex - 1 && rows.size < maxRows) {
-                                    rows.add(emptyList())
-                                }
-                            }
-                            currentRow = row
-                        }
-
-                        "cell" -> {
-                            val row = currentRow
-                            if (row != null) {
-                                val index = getAttributeByLocalName(parser, "Index")?.toIntOrNull()
-                                if (index != null && index > row.size + 1) {
-                                    while (row.size < index - 1 && row.size < maxCols) {
-                                        row.add("")
-                                    }
-                                }
-                            }
-                            currentCellText = StringBuilder()
-                        }
-
-                        "data" -> {
-                            captureData = true
-                            currentCellText?.clear()
-                        }
-                    }
-                }
-
-                org.xmlpull.v1.XmlPullParser.TEXT -> {
-                    if (captureData) {
-                        currentCellText?.append(parser.text.orEmpty())
-                    }
-                }
-
-                org.xmlpull.v1.XmlPullParser.END_TAG -> {
-                    when (localName(parser.name).lowercase(Locale.ROOT)) {
-                        "data" -> captureData = false
-
-                        "cell" -> {
-                            val row = currentRow
-                            if (row != null && row.size < maxCols) {
-                                row.add(currentCellText?.toString().orEmpty())
-                            }
-                            currentCellText = null
-                        }
-
-                        "row" -> {
-                            val row = currentRow
-                            if (row != null) {
-                                val trimmed = row.take(maxCols).toMutableList()
-                                while (trimmed.isNotEmpty() && trimmed.last().isBlank()) {
-                                    trimmed.removeAt(trimmed.lastIndex)
-                                }
-                                if (trimmed.isNotEmpty() || rows.isNotEmpty()) {
-                                    rows.add(trimmed)
-                                }
-                            }
-                            currentRow = null
-                        }
-                    }
-                }
-            }
-            event = parser.next()
-        }
-
-        return rows.takeIf { it.isNotEmpty() }
     }
 
     private fun getAttributeByLocalName(
@@ -1104,8 +1989,5 @@ private fun InputStream.readPreviewBytes(limit: Int): ByteArray {
 
     return buffer.toByteArray()
 }
-
-
-
 
 

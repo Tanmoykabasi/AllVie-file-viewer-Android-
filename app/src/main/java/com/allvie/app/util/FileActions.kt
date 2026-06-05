@@ -6,37 +6,34 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
+import androidx.core.content.FileProvider
 import com.allvie.app.domain.model.FileItem
+import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-fun openFileWithSystem(context: Context, file: FileItem): Boolean {
-    val uri = Uri.parse(file.uriString)
-    val mimeType = resolvedMimeType(file)
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, mimeType)
-        clipData = ClipData.newUri(context.contentResolver, file.displayName, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        if (context !is Activity) {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-    }
-
-    if (intent.resolveActivity(context.packageManager) == null) {
-        return false
-    }
-
-    return runCatching {
-        context.startActivity(intent)
-        true
-    }.getOrElse { false }
-}
-
 fun shareFile(context: Context, file: FileItem): Boolean {
-    val uri = Uri.parse(file.uriString)
+    val originalUri = Uri.parse(file.uriString)
+    val shareUri = when {
+        originalUri.scheme.equals("file", ignoreCase = true) -> {
+            val path = originalUri.path ?: return false
+            val localFile = File(path)
+            if (!localFile.exists() || !localFile.isFile) return false
+            runCatching {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    localFile
+                )
+            }.getOrElse { return false }
+        }
+
+        else -> originalUri
+    }
+
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        putExtra(Intent.EXTRA_STREAM, uri)
-        clipData = ClipData.newUri(context.contentResolver, file.displayName, uri)
+        putExtra(Intent.EXTRA_STREAM, shareUri)
+        clipData = ClipData.newUri(context.contentResolver, file.displayName, shareUri)
         type = resolvedMimeType(file)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
@@ -86,7 +83,6 @@ private fun resolvedMimeType(file: FileItem): String {
         "md" -> "text/markdown"
         "csv" -> "text/csv"
         "json" -> "application/json"
-        "xml" -> "application/xml"
         "doc" -> "application/msword"
         "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         "xls" -> "application/vnd.ms-excel"

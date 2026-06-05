@@ -14,8 +14,8 @@ android {
         applicationId = "com.allvie.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -25,7 +25,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -71,6 +72,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.documentfile)
+    implementation(libs.coil)
+    implementation(libs.coil.compose)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -84,10 +87,10 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.apache.poi)
-    implementation(libs.apache.poi.ooxml)
-    implementation(libs.apache.poi.scratchpad)
     implementation(libs.pdfviewer)
+    implementation(libs.poi.ooxml)
+    implementation(libs.poi.ooxml.lite)
+    implementation(libs.poi.scratchpad)
 
     kapt(libs.androidx.room.compiler)
     kapt(libs.hilt.compiler)

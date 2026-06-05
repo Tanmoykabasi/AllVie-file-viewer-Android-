@@ -7,19 +7,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ViewAgenda
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -47,6 +48,7 @@ import com.allvie.app.data.repository.HistoryRepository
 import com.allvie.app.domain.model.FileCategory
 import com.allvie.app.domain.model.FileItem
 import com.allvie.app.domain.model.LayoutMode
+import com.allvie.app.ui.components.CompactSearchBar
 import com.allvie.app.ui.components.DeleteFileDialog
 import com.allvie.app.ui.components.EmptyState
 import com.allvie.app.ui.components.FileCollection
@@ -305,8 +307,8 @@ fun FilesScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (!state.hasStorageAccess) {
             EmptyState(
@@ -318,44 +320,65 @@ fun FilesScreen(
             )
         } else {
 
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = viewModel::onSearchChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                leadingIcon = { Icon(imageVector = Icons.Rounded.Search, contentDescription = null) },
-                trailingIcon = {
+            CompactSearchBar(
+                query = state.searchQuery,
+                placeholder = "Search files",
+                onQueryChange = viewModel::onSearchChange,
+                trailingContent = {
                     if (state.isRefreshing) {
                         CircularProgressIndicator(
-                            modifier = Modifier.padding(8.dp),
+                            modifier = Modifier
+                                .padding(horizontal = 10.dp)
+                                .size(20.dp),
                             strokeWidth = 2.dp
                         )
                     } else {
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(
                                 imageVector = Icons.Rounded.Refresh,
-                                contentDescription = "Rescan files"
+                                contentDescription = "Rescan files",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
-                },
-                label = { Text("Search files") }
+                }
             )
 
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 FileCategory.entries.forEach { category ->
                     FilterChip(
                         selected = state.selectedFilter == category,
                         onClick = { viewModel.onFilterChange(category) },
-                        label = { Text(category.label) }
+                        modifier = Modifier.height(34.dp),
+                        label = {
+                            Text(
+                                text = category.label,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
+                            labelColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = state.selectedFilter == category,
+                            borderColor = MaterialTheme.colorScheme.outline,
+                            selectedBorderColor = MaterialTheme.colorScheme.primaryContainer
+                        )
                     )
                 }
             }
 
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = "${state.files.size} items",
                     style = MaterialTheme.typography.bodyMedium,
@@ -375,7 +398,8 @@ fun FilesScreen(
                         } else {
                             Icons.Rounded.Dashboard
                         },
-                        contentDescription = "Toggle layout"
+                        contentDescription = "Toggle layout",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -427,16 +451,4 @@ fun FilesScreen(
         )
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
