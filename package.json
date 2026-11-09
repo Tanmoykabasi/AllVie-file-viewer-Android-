@@ -1,0 +1,12 @@
+{
+  "name": "allvie-android",
+  "version": "4.0.0",
+  "private": true,
+  "description": "AllVie v4.0 Android Document, PDF, Spreadsheet, and PowerPoint Reader",
+  "scripts": {
+    "dev": "node preview-server.cjs",
+    "start": "node preview-server.cjs",
+    "build": "echo 'AllVie v4.0 ready'",
+    "lint": "node --check preview-server.cjs"
+  }
+}

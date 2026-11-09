@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ViewAgenda
@@ -50,10 +51,13 @@ import com.allvie.app.domain.model.FileItem
 import com.allvie.app.domain.model.LayoutMode
 import com.allvie.app.ui.components.CompactSearchBar
 import com.allvie.app.ui.components.DeleteFileDialog
+import com.allvie.app.ui.components.DeleteMultipleFilesDialog
 import com.allvie.app.ui.components.EmptyState
 import com.allvie.app.ui.components.FileCollection
 import com.allvie.app.ui.components.RenameFileDialog
+import com.allvie.app.ui.components.SelectionActionBar
 import com.allvie.app.util.shareFile
+import com.allvie.app.util.shareFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -245,8 +249,41 @@ class FilesViewModel @Inject constructor(
         }
     }
 
+    fun deleteFiles(files: List<FileItem>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            val deletedUris = mutableSetOf<String>()
+            var failedCount = 0
+            files.forEach { file ->
+                fileRepository.deleteFile(file.uriString)
+                    .onSuccess {
+                        historyRepository.removeFile(file.uriString)
+                        deletedUris.add(file.uriString)
+                    }
+                    .onFailure {
+                        failedCount++
+                    }
+            }
+            if (deletedUris.isNotEmpty()) {
+                rawFiles.value = rawFiles.value.filterNot { it.uriString in deletedUris }
+            }
+            message.value = when {
+                deletedUris.isNotEmpty() && failedCount == 0 ->
+                    "Deleted ${deletedUris.size} ${if (deletedUris.size == 1) "file" else "files"}."
+                deletedUris.isNotEmpty() ->
+                    "Deleted ${deletedUris.size} files ($failedCount failed)."
+                else ->
+                    "Unable to delete selected files."
+            }
+        }
+    }
+
     fun onShareFailed(file: FileItem) {
         message.value = "No app available to share ${file.displayName}."
+    }
+
+    fun onShareMultipleFailed() {
+        message.value = "No app available to share selected files."
     }
 
     fun clearMessage() {
@@ -278,11 +315,19 @@ fun FilesScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var renameTarget by remember { mutableStateOf<FileItem?>(null) }
     var deleteTarget by remember { mutableStateOf<FileItem?>(null) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedUris by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(hasStorageAccess) {
         viewModel.setStorageAccess(hasStorageAccess)
+    }
+
+    LaunchedEffect(state.files) {
+        val validUris = state.files.mapTo(mutableSetOf()) { it.uriString }
+        selectedUris = selectedUris.intersect(validUris)
     }
 
     DisposableEffect(lifecycleOwner, state.hasStorageAccess) {
@@ -375,32 +420,80 @@ fun FilesScreen(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${state.files.size} items",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
+            if (selectionMode) {
+                SelectionActionBar(
+                    selectedCount = selectedUris.size,
+                    totalCount = state.files.size,
+                    onSelectAllToggle = {
+                        selectedUris = if (selectedUris.size == state.files.size && state.files.isNotEmpty()) {
+                            emptySet()
+                        } else {
+                            state.files.mapTo(mutableSetOf()) { it.uriString }
+                        }
+                    },
+                    onShareSelected = {
+                        val selectedFiles = state.files.filter { it.uriString in selectedUris }
+                        if (selectedFiles.isNotEmpty()) {
+                            if (!shareFiles(context, selectedFiles)) {
+                                viewModel.onShareMultipleFailed()
+                            } else {
+                                selectionMode = false
+                                selectedUris = emptySet()
+                            }
+                        }
+                    },
+                    onDeleteSelected = {
+                        if (selectedUris.isNotEmpty()) {
+                            showBatchDeleteDialog = true
+                        }
+                    },
+                    onClearSelection = {
+                        selectionMode = false
+                        selectedUris = emptySet()
+                    }
                 )
-                IconButton(
-                    onClick = {
-                        viewModel.setLayoutMode(
-                            if (state.layoutMode == LayoutMode.GRID) LayoutMode.LIST else LayoutMode.GRID
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${state.files.size} items",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.files.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                selectionMode = true
+                                selectedUris = emptySet()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Checklist,
+                                contentDescription = "Select multiple files",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            viewModel.setLayoutMode(
+                                if (state.layoutMode == LayoutMode.GRID) LayoutMode.LIST else LayoutMode.GRID
+                            )
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (state.layoutMode == LayoutMode.GRID) {
+                                Icons.Rounded.ViewAgenda
+                            } else {
+                                Icons.Rounded.Dashboard
+                            },
+                            contentDescription = "Toggle layout",
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                ) {
-                    Icon(
-                        imageVector = if (state.layoutMode == LayoutMode.GRID) {
-                            Icons.Rounded.ViewAgenda
-                        } else {
-                            Icons.Rounded.Dashboard
-                        },
-                        contentDescription = "Toggle layout",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
                 }
             }
 
@@ -410,6 +503,16 @@ fun FilesScreen(
                     layoutMode = state.layoutMode,
                     emptyTitle = "No files found",
                     emptyBody = "Try another filter or wait for the next scan.",
+                    selectionMode = selectionMode,
+                    selectedUris = selectedUris,
+                    onToggleSelect = { file ->
+                        selectionMode = true
+                        selectedUris = if (file.uriString in selectedUris) {
+                            selectedUris - file.uriString
+                        } else {
+                            selectedUris + file.uriString
+                        }
+                    },
                     onOpen = { file ->
                         viewModel.onFileOpened(file)
                         onOpenFile(file)
@@ -447,6 +550,20 @@ fun FilesScreen(
             onConfirm = {
                 viewModel.deleteFile(file)
                 deleteTarget = null
+            }
+        )
+    }
+
+    if (showBatchDeleteDialog && selectedUris.isNotEmpty()) {
+        val selectedFiles = state.files.filter { it.uriString in selectedUris }
+        DeleteMultipleFilesDialog(
+            count = selectedFiles.size,
+            onDismiss = { showBatchDeleteDialog = false },
+            onConfirm = {
+                viewModel.deleteFiles(selectedFiles)
+                showBatchDeleteDialog = false
+                selectionMode = false
+                selectedUris = emptySet()
             }
         )
     }

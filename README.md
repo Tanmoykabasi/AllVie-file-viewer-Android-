@@ -1,100 +1,30 @@
-# AllVie 📁
-
-> **Android File Viewer App** — View PDF, TXT, DOCX, XLS/XLSX, and PPT/PPTX in one clean, privacy-focused app.
-
-![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android)
-![Language](https://img.shields.io/badge/Language-Kotlin-0095D5?logo=kotlin)
-![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4)
-![License](https://img.shields.io/badge/License-MIT-yellow)
-
-[![Latest Release](https://img.shields.io/github/v/release/Tanmoykabasi/AllVie-file-viewer-Android-?label=Latest)](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases)
-
----
-
-## 📦 Download
-Get the latest APK from [Releases](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases):
-- **v3.0** (June 2026) — [Allvie.apk](https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-/releases/download/v3.0/app-debug.apk) (~55 MB)
+<div align="center">
+  <img src="docs/app-icon.svg" alt="AllVie App Icon" width="128" height="128" />
+  <h1>AllVie v4.0</h1>
+  <p><strong>Universal Offline Android Document, PDF, Spreadsheet & PowerPoint Reader</strong></p>
+  <p>
+    <img src="https://img.shields.io/badge/Android-8.0%20(API%2026)%20--%2016%20(API%2036)-1E5EFF?style=for-the-badge&logo=android&logoColor=white" alt="Android 8.0 - 16" />
+    <img src="https://img.shields.io/badge/Version-4.0-16A34A?style=for-the-badge" alt="Version 4.0" />
+    <img src="https://img.shields.io/badge/Offline-100%25%20Local-EA580C?style=for-the-badge" alt="100% Offline" />
+  </p>
+</div>
 
 ---
 
-## ✨ Features (v3.0)
-- 📄 **Native Viewers**: In-app rendering for **PDF**, **Images**, **Plain Text**, **DOCX**, **XLS/XLSX**, and **PPT/PPTX**
-- 🔎 **PDF Controls**: Zoom, scrolling, page controls, dark viewer background, and password-protected PDF support
-- 📝 **DOCX Renderer**: Native `.docx` rendering with Apache POI, Canvas rendering, image support, and page caching
-- 🎞️ **Presentation Viewer**: Native PPT/PPTX slide rendering with bitmap caching and smooth slide navigation
-- 📊 **Spreadsheet Preview**: In-app XLS/XLSX table preview
-- 🌙 **Dark Mode**: Improved readability across Files, Recents, Bookmarks, Settings, and viewers
-- 💾 **Local Persistence**: Bookmarks and recent files stored via Room
-- ⚙️ **User Preferences**: Theme and layout mode via DataStore
-- 🔄 **External Handoff**: Legacy `.doc` files open with external apps for best compatibility
-- 🧹 **Clean UI**: Material 3 design with adaptive layouts for phones and tablets
+## Overview
 
----
+**AllVie v4.0** is a fast, zero-network document and office reader engineered for **Android 8.0 Oreo (API 26) through Android 16 (API 36)**.
 
-## 🛠 Tech Stack
-| Layer | Technology |
-|-------|-----------|
-| Language | Kotlin |
-| UI | Jetpack Compose + Material 3 |
-| Architecture | MVVM + Clean Architecture |
-| DI | Hilt |
-| Storage | Room (SQLite) + DataStore |
-| Async | Kotlin Coroutines + Flow |
-| Build | Gradle (Kotlin DSL) |
-| Min SDK | 26 (Android 8.0+) |
-| Target SDK | 35 |
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Android Studio Ladybug or newer
-- JDK 17+
-- Android SDK 35+
-
-### Build from Source
-```bash
-git clone https://github.com/Tanmoykabasi/AllVie-file-viewer-Android-.git
-cd AllVie-file-viewer-Android-
-# Open in Android Studio → Sync Gradle → Run
-```
-
-### Project Structure
-```
-📦 AllVie
- ┣ 📂 app/          → Main application module
- ┣ 📂 gradle/       → Build configuration
- ┣ 📜 build.gradle.kts
- ┣ 📜 settings.gradle.kts
- ┗ 📜 README.md
-```
-
----
-
-## 🗺️ Roadmap
-## Roadmap
-- [ ] Search within documents
-- [ ] Widget and quick-access shortcuts
-- [ ] More advanced Office layout fidelity
-
-> ⚠️ **Note**: DOCX preview is experimental in v3.0. Legacy `.doc` files are intentionally not rendered in-app.
-
----
-
-## 🤝 Contributing
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feat/your-change`
-3. Commit: `git commit -m 'feat: describe change'`
-4. Push & open a PR
-
-Please follow Kotlin coding conventions and test on Android 10+ devices.
-
----
-
-## 📜 License
-MIT License — See [LICENSE](LICENSE) for details.
-
----
-
-> Built by [Tanmoy Kabasi](https://github.com/Tanmoykabasi) using Kotlin & Jetpack Compose.
+### Key Features in v4.0
+- **Android 8.0 – Android 16 ("Android 8-All") Compatibility**:
+  - **Android 8.0–8.1 (API 26–27)**: Adaptive Launcher Icons (`mipmap-anydpi-v26`), Java 8 / D8 `--min-api 26` bytecode, v1 + v2 + v3 APK signing, Legacy External Storage + SAF picker, and native `Inflater` ZIP bridge.
+  - **Android 9–10 (API 28–29)**: `requestLegacyExternalStorage="true"` transition support, display cutout adaptation, and system dark mode sync.
+  - **Android 11–12L (API 30–32)**: Scoped Storage & `ACTION_SEND_MULTIPLE` multi-file batch share and delete.
+  - **Android 13–16 (API 33–36)**: Monochrome themed adaptive icon (`ic_launcher_monochrome`), zero-permission Storage Access Framework (`ACTION_OPEN_DOCUMENT`), and system `ACTION_VIEW` document opener.
+- **High-Fidelity PPTX Presentation Engine**:
+  - Interactive **List**, **Slide**, and fullscreen **Play** modes with auto-play timer, laser pointer, zoom/pan controls, thumbnail filmstrip, and progress scrubber.
+  - Full support for Master/Layout inheritance, theme color transforms (`lumMod`, `lumOff`, `tint`, `shade`), tables, charts, vector shapes, and connectors.
+- **Multi-File Batch Selection**:
+  - Select multiple files across **Files**, **Recents**, and **Bookmarks** for one-tap **Share** and **Delete**.
+- **Unified Stacked-Card File Badges**:
+  - Distinct card-style badges for `PDF`, `DOC`, `XLS`, `PPT`, `TXT`, `CSV`, and `XML`.

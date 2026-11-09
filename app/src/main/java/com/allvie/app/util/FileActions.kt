@@ -12,24 +12,28 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-fun shareFile(context: Context, file: FileItem): Boolean {
+private fun resolveShareUri(context: Context, file: FileItem): Uri? {
     val originalUri = Uri.parse(file.uriString)
-    val shareUri = when {
+    return when {
         originalUri.scheme.equals("file", ignoreCase = true) -> {
-            val path = originalUri.path ?: return false
+            val path = originalUri.path ?: return null
             val localFile = File(path)
-            if (!localFile.exists() || !localFile.isFile) return false
+            if (!localFile.exists() || !localFile.isFile) return null
             runCatching {
                 FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.fileprovider",
                     localFile
                 )
-            }.getOrElse { return false }
+            }.getOrNull()
         }
 
         else -> originalUri
     }
+}
+
+fun shareFile(context: Context, file: FileItem): Boolean {
+    val shareUri = resolveShareUri(context, file) ?: return false
 
     val shareIntent = Intent(Intent.ACTION_SEND).apply {
         putExtra(Intent.EXTRA_STREAM, shareUri)
@@ -43,6 +47,51 @@ fun shareFile(context: Context, file: FileItem): Boolean {
     }
 
     val chooserIntent = Intent.createChooser(shareIntent, "Share ${file.displayName}").apply {
+        if (context !is Activity) {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    return runCatching {
+        context.startActivity(chooserIntent)
+        true
+    }.getOrElse { false }
+}
+
+fun shareFiles(context: Context, files: List<FileItem>): Boolean {
+    if (files.isEmpty()) return false
+    if (files.size == 1) return shareFile(context, files.first())
+
+    val uris = ArrayList<Uri>(files.size)
+    var clip: ClipData? = null
+    val mimeTypes = mutableSetOf<String>()
+
+    files.forEach { file ->
+        val shareUri = resolveShareUri(context, file) ?: return@forEach
+        uris.add(shareUri)
+        mimeTypes.add(resolvedMimeType(file))
+        if (clip == null) {
+            clip = ClipData.newUri(context.contentResolver, file.displayName, shareUri)
+        } else {
+            clip?.addItem(ClipData.Item(shareUri))
+        }
+    }
+
+    if (uris.isEmpty()) return false
+
+    val commonMime = if (mimeTypes.size == 1) mimeTypes.first() else "*/*"
+    val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        clipData = clip
+        type = commonMime
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    if (shareIntent.resolveActivity(context.packageManager) == null) {
+        return false
+    }
+
+    val chooserIntent = Intent.createChooser(shareIntent, "Share ${uris.size} files").apply {
         if (context !is Activity) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

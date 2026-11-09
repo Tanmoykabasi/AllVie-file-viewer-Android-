@@ -508,23 +508,29 @@ class FileRepository @Inject constructor(
     ): List<PresentationSlideData> {
         val slideXmlEntries = readZipEntries(
             uri = uri,
-            maxBytes = 2 * 1024 * 1024,
-            maxEntries = (maxSlides * 2) + 1,
+            maxBytes = 4 * 1024 * 1024,
+            maxEntries = (maxSlides * 2) + 4,
             include = { entryName ->
                 entryName == "ppt/presentation.xml" ||
+                    entryName == "ppt/_rels/presentation.xml.rels" ||
                     (entryName.startsWith("ppt/slides/slide") && entryName.endsWith(".xml")) ||
                     (entryName.startsWith("ppt/slides/_rels/slide") && entryName.endsWith(".xml.rels"))
             }
         )
 
         val slideSize = parsePresentationSize(slideXmlEntries["ppt/presentation.xml"])
-        val slideEntryNames = slideXmlEntries.keys
+        val allSlideFiles = slideXmlEntries.keys
             .filter { it.startsWith("ppt/slides/slide") && it.endsWith(".xml") }
             .sortedBy(::slideOrder)
-            .take(maxSlides)
-        val imageRelationshipsBySlide = slideEntryNames.associate { entryName ->
+        val orderedFromPresentation = parseOrderedSlideEntries(
+            presentationXml = slideXmlEntries["ppt/presentation.xml"],
+            presentationRelsXml = slideXmlEntries["ppt/_rels/presentation.xml.rels"],
+            availableSlides = allSlideFiles.toSet()
+        )
+        val slideEntryNames = (orderedFromPresentation.ifEmpty { allSlideFiles }).take(maxSlides)
+        val imageRelationshipsBySlide = slideEntryNames.associateWith { entryName ->
             val relsEntryName = relationshipEntryNameForSlide(entryName)
-            entryName to parsePptxImageRelationships(
+            parsePptxImageRelationships(
                 xmlBytes = slideXmlEntries[relsEntryName],
                 sourceEntryName = entryName,
                 maxImages = maxImagesPerSlide
@@ -541,9 +547,9 @@ class FileRepository @Inject constructor(
             maxImageBytes = maxImageBytes
         )
 
-        val laidOutSlides = slideEntryNames.mapNotNull { entryName ->
-            val slideIndex = slideOrder(entryName)
-            val xmlBytes = slideXmlEntries[entryName] ?: return@mapNotNull null
+        val laidOutSlides = slideEntryNames.mapIndexedNotNull { idx, entryName ->
+            val slideIndex = idx + 1
+            val xmlBytes = slideXmlEntries[entryName] ?: return@mapIndexedNotNull null
             val imageTargets = imageRelationshipsBySlide[entryName].orEmpty()
             val resolvedImageUris = LinkedHashMap<String, String>()
             imageTargets.forEach { (relationshipId, mediaEntryName) ->
@@ -559,14 +565,7 @@ class FileRepository @Inject constructor(
                     .distinct()
                     .take(maxImagesPerSlide)
                 val extractedText = runCatching { extractPresentationXmlText(xmlBytes) }.getOrDefault("")
-                val safeText = if (extractedText.isBlank() &&
-                    imageTargets.isNotEmpty() &&
-                    orderedImageUris.isEmpty()
-                ) {
-                    "Slide contains unsupported elements."
-                } else {
-                    extractedText
-                }
+                val safeText = extractedText.ifBlank { "Slide $slideIndex" }
                 PresentationSlideData(
                     index = slideIndex,
                     text = safeText,
@@ -580,23 +579,16 @@ class FileRepository @Inject constructor(
                     )
                 ).withFallbackLayout()
             }.getOrElse {
-                val fallbackText = runCatching { extractPresentationXmlText(xmlBytes) }.getOrDefault("")
-                val safeFallbackText = if (fallbackText.isBlank() && imageTargets.isNotEmpty()) {
-                    "Slide contains unsupported elements."
-                } else {
-                    fallbackText
-                }
-                if (safeFallbackText.isBlank()) {
-                    null
-                } else {
-                    PresentationSlideData(
-                        index = slideIndex,
-                        text = safeFallbackText,
-                        widthEmu = slideSize.widthEmu,
-                        heightEmu = slideSize.heightEmu,
-                        backgroundColorHex = "#FFFFFF"
-                    ).withFallbackLayout()
-                }
+                val fallbackText = runCatching { extractPresentationXmlText(xmlBytes) }
+                    .getOrDefault("")
+                    .ifBlank { "Slide $slideIndex" }
+                PresentationSlideData(
+                    index = slideIndex,
+                    text = fallbackText,
+                    widthEmu = slideSize.widthEmu,
+                    heightEmu = slideSize.heightEmu,
+                    backgroundColorHex = "#FFFFFF"
+                ).withFallbackLayout()
             }
         }
 
@@ -613,6 +605,54 @@ class FileRepository @Inject constructor(
                     backgroundColorHex = "#FFFFFF"
                 ).withFallbackLayout()
             }
+    }
+
+    private fun parseOrderedSlideEntries(
+        presentationXml: ByteArray?,
+        presentationRelsXml: ByteArray?,
+        availableSlides: Set<String>
+    ): List<String> {
+        if (presentationXml == null || presentationRelsXml == null) return emptyList()
+        val relTargets = LinkedHashMap<String, String>()
+        runCatching {
+            val relParser = Xml.newPullParser()
+            relParser.setInput(ByteArrayInputStream(presentationRelsXml), null)
+            var ev = relParser.eventType
+            while (ev != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                if (ev == org.xmlpull.v1.XmlPullParser.START_TAG && localName(relParser.name) == "Relationship") {
+                    val id = getAttributeByLocalName(relParser, "Id").orEmpty()
+                    val target = getAttributeByLocalName(relParser, "Target").orEmpty()
+                    if (id.isNotBlank() && target.isNotBlank()) {
+                        relTargets[id] = resolveZipEntryTarget("ppt/presentation.xml", target)
+                    }
+                }
+                ev = relParser.next()
+            }
+        }
+        if (relTargets.isEmpty()) return emptyList()
+
+        val ordered = mutableListOf<String>()
+        runCatching {
+            val parser = Xml.newPullParser()
+            parser.setInput(ByteArrayInputStream(presentationXml), null)
+            var ev = parser.eventType
+            while (ev != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                if (ev == org.xmlpull.v1.XmlPullParser.START_TAG && localName(parser.name) == "sldId") {
+                    val rId = getAttributeByLocalName(parser, "id")
+                        ?.takeIf { it.startsWith("rId") }
+                        ?: (0 until parser.attributeCount).firstNotNullOfOrNull { i ->
+                            val v = parser.getAttributeValue(i)
+                            if (localName(parser.getAttributeName(i)) == "id" && v.startsWith("rId")) v else null
+                        }
+                    val target = if (rId != null) relTargets[rId] else null
+                    if (target != null && availableSlides.contains(target) && !ordered.contains(target)) {
+                        ordered.add(target)
+                    }
+                }
+                ev = parser.next()
+            }
+        }
+        return ordered
     }
 
     private fun parsePresentationSize(xmlBytes: ByteArray?): PresentationSize {

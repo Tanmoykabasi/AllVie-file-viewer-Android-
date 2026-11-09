@@ -1417,9 +1417,16 @@ private fun PresentationSlideBitmapCard(
         failed = bitmap == null
     }
 
+    val rendered = bitmap
+    val cardAspect = if (rendered != null && !rendered.isRecycled && rendered.height > 0) {
+        (rendered.width.toFloat() / rendered.height.toFloat()).coerceIn(0.5f, 3f)
+    } else {
+        16f / 9f
+    }
+
     Surface(
         modifier = modifier
-            .aspectRatio(16f / 9f)
+            .aspectRatio(cardAspect)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(6.dp),
         color = Color.White,
@@ -1642,7 +1649,12 @@ private fun ZoomablePresentationSlide(
         } else {
             16f / 9f
         }
-        val slideAspect = 16f / 9f
+        val rendered = bitmap
+        val slideAspect = if (rendered != null && !rendered.isRecycled && rendered.height > 0) {
+            (rendered.width.toFloat() / rendered.height.toFloat()).coerceIn(0.5f, 3f)
+        } else {
+            16f / 9f
+        }
         val slideModifier = if (containerAspect > slideAspect) {
             Modifier
                 .fillMaxHeight()
@@ -1652,8 +1664,6 @@ private fun ZoomablePresentationSlide(
                 .fillMaxWidth()
                 .aspectRatio(slideAspect)
         }
-
-        val rendered = bitmap
         when {
             rendered != null && !rendered.isRecycled -> {
                 Image(
@@ -1749,7 +1759,12 @@ private fun PresentationPlayMode(
             } else {
                 16f / 9f
             }
-            val slideAspect = 16f / 9f
+            val bitmap = renderedBitmap
+            val slideAspect = if (bitmap != null && !bitmap.isRecycled && bitmap.height > 0) {
+                (bitmap.width.toFloat() / bitmap.height.toFloat()).coerceIn(0.5f, 3f)
+            } else {
+                16f / 9f
+            }
             val slideModifier = if (containerAspect > slideAspect) {
                 Modifier
                     .fillMaxHeight()
@@ -1764,7 +1779,6 @@ private fun PresentationPlayMode(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                val bitmap = renderedBitmap
                 when {
                     bitmap != null && !bitmap.isRecycled -> {
                         Image(

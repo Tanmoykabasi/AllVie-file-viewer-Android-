@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -27,9 +32,12 @@ import com.allvie.app.domain.model.FileItem
 import com.allvie.app.domain.model.LayoutMode
 import com.allvie.app.ui.components.CompactSearchBar
 import com.allvie.app.ui.components.DeleteFileDialog
+import com.allvie.app.ui.components.DeleteMultipleFilesDialog
 import com.allvie.app.ui.components.FileCollection
 import com.allvie.app.ui.components.RenameFileDialog
+import com.allvie.app.ui.components.SelectionActionBar
 import com.allvie.app.util.shareFile
+import com.allvie.app.util.shareFiles
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,8 +149,38 @@ class BookmarksViewModel @Inject constructor(
         }
     }
 
+    fun deleteFiles(files: List<FileItem>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            var deletedCount = 0
+            var failedCount = 0
+            files.forEach { file ->
+                fileRepository.deleteFile(file.uriString)
+                    .onSuccess {
+                        historyRepository.removeFile(file.uriString)
+                        deletedCount++
+                    }
+                    .onFailure {
+                        failedCount++
+                    }
+            }
+            message.value = when {
+                deletedCount > 0 && failedCount == 0 ->
+                    "Deleted $deletedCount ${if (deletedCount == 1) "file" else "files"}."
+                deletedCount > 0 ->
+                    "Deleted $deletedCount files ($failedCount failed)."
+                else ->
+                    "Unable to delete selected files."
+            }
+        }
+    }
+
     fun onShareFailed(file: FileItem) {
         message.value = "No app available to share ${file.displayName}."
+    }
+
+    fun onShareMultipleFailed() {
+        message.value = "No app available to share selected files."
     }
 
     fun clearMessage() {
@@ -159,7 +197,15 @@ fun BookmarksScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var renameTarget by remember { mutableStateOf<FileItem?>(null) }
     var deleteTarget by remember { mutableStateOf<FileItem?>(null) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedUris by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    LaunchedEffect(state.files) {
+        val validUris = state.files.mapTo(mutableSetOf()) { it.uriString }
+        selectedUris = selectedUris.intersect(validUris)
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let { text ->
@@ -178,8 +224,58 @@ fun BookmarksScreen(
         CompactSearchBar(
             query = state.searchQuery,
             placeholder = "Search files",
-            onQueryChange = viewModel::onSearchChange
+            onQueryChange = viewModel::onSearchChange,
+            trailingContent = {
+                if (state.files.isNotEmpty() && !selectionMode) {
+                    IconButton(
+                        onClick = {
+                            selectionMode = true
+                            selectedUris = emptySet()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Checklist,
+                            contentDescription = "Select multiple files",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         )
+
+        if (selectionMode) {
+            SelectionActionBar(
+                selectedCount = selectedUris.size,
+                totalCount = state.files.size,
+                onSelectAllToggle = {
+                    selectedUris = if (selectedUris.size == state.files.size && state.files.isNotEmpty()) {
+                        emptySet()
+                    } else {
+                        state.files.mapTo(mutableSetOf()) { it.uriString }
+                    }
+                },
+                onShareSelected = {
+                    val selectedFiles = state.files.filter { it.uriString in selectedUris }
+                    if (selectedFiles.isNotEmpty()) {
+                        if (!shareFiles(context, selectedFiles)) {
+                            viewModel.onShareMultipleFailed()
+                        } else {
+                            selectionMode = false
+                            selectedUris = emptySet()
+                        }
+                    }
+                },
+                onDeleteSelected = {
+                    if (selectedUris.isNotEmpty()) {
+                        showBatchDeleteDialog = true
+                    }
+                },
+                onClearSelection = {
+                    selectionMode = false
+                    selectedUris = emptySet()
+                }
+            )
+        }
 
         Box(modifier = Modifier.weight(1f)) {
             FileCollection(
@@ -187,6 +283,16 @@ fun BookmarksScreen(
                 layoutMode = state.layoutMode,
                 emptyTitle = "No bookmarks yet",
                 emptyBody = "Bookmark a file from the Files or Recents tabs to see it here.",
+                selectionMode = selectionMode,
+                selectedUris = selectedUris,
+                onToggleSelect = { file ->
+                    selectionMode = true
+                    selectedUris = if (file.uriString in selectedUris) {
+                        selectedUris - file.uriString
+                    } else {
+                        selectedUris + file.uriString
+                    }
+                },
                 onOpen = { file ->
                     viewModel.onFileOpened(file)
                     onOpenFile(file)
@@ -223,6 +329,20 @@ fun BookmarksScreen(
             onConfirm = {
                 viewModel.deleteFile(file)
                 deleteTarget = null
+            }
+        )
+    }
+
+    if (showBatchDeleteDialog && selectedUris.isNotEmpty()) {
+        val selectedFiles = state.files.filter { it.uriString in selectedUris }
+        DeleteMultipleFilesDialog(
+            count = selectedFiles.size,
+            onDismiss = { showBatchDeleteDialog = false },
+            onConfirm = {
+                viewModel.deleteFiles(selectedFiles)
+                showBatchDeleteDialog = false
+                selectionMode = false
+                selectedUris = emptySet()
             }
         )
     }

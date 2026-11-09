@@ -21,6 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.allvie.app.BuildConfig
 import com.allvie.app.data.preferences.UserPreferencesRepository
 import com.allvie.app.domain.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -103,5 +104,18 @@ fun SettingsScreen(
                 )
             }
         }
+
+        Text(
+            text = "About",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+
+        Text(
+            text = "AllVie v${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
